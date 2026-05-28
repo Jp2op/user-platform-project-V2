@@ -1,32 +1,10 @@
-# -----------------------------------------------------------------------------
-# TERRAFORM DESTROY PIPELINE
-#
-# Destroys all infrastructure created by terraform apply.
-# MANUAL TRIGGER ONLY — never runs automatically.
-# Requires typing "destroy" as confirmation to prevent accidents.
-#
-# What it does NOT destroy:
-#   - S3 state bucket (has prevent_destroy = true)
-#   - DynamoDB lock table
-#   - Bootstrap resources
-#   These are protected intentionally — you need them to re-apply later.
-#
-# To re-create everything after destroy:
-#   Just push a change to terraform/** — the apply pipeline recreates it all.
-#
-# Cost saving tip:
-#   Destroy when not working on the project.
-#   Re-apply when you need it back.
-#   EKS alone costs $72/month — destroying saves that immediately.
-# -----------------------------------------------------------------------------
-
 name: Terraform Destroy
 
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: "Type DESTROY to confirm you want to destroy all infrastructure"
+        description: "Type DESTROY to confirm"
         required: true
         type: string
 
@@ -44,36 +22,33 @@ env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
 
 jobs:
-  validate-confirmation:
+  validate:
     name: Validate Confirmation
     runs-on: ubuntu-latest
-
     steps:
-      - name: Check confirmation input
+      - name: Check confirmation
         run: |
           if [ "${{ github.event.inputs.confirm }}" != "DESTROY" ]; then
-            echo "ERROR: You must type DESTROY exactly to confirm"
-            echo "You typed: ${{ github.event.inputs.confirm }}"
+            echo "You must type DESTROY exactly to confirm"
             exit 1
           fi
-          echo "Confirmation validated — proceeding with destroy"
 
-  terraform-destroy:
+  destroy:
     name: Terraform Destroy
     runs-on: ubuntu-latest
-    needs: validate-confirmation
+    needs: validate
     environment: production
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials via OIDC
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.TF_PIPELINE_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-          role-duration-seconds: 3600
+          role-session-duration: 3600
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -84,12 +59,8 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init
 
-      # EKS node groups must be deleted before cluster can be destroyed.
-      # Terraform handles this via depends_on but sometimes needs a nudge.
-      # We scale down nodes first to speed up the process.
-      - name: Scale down EKS nodes before destroy
+      - name: Scale down EKS nodes
         run: |
-          # Check if cluster exists first
           CLUSTER_STATUS=$(aws eks describe-cluster \
             --name uplatform-cluster \
             --region ${{ env.AWS_REGION }} \
@@ -97,47 +68,15 @@ jobs:
             --output text 2>/dev/null || echo "NOT_FOUND")
 
           if [ "$CLUSTER_STATUS" == "ACTIVE" ]; then
-            echo "Scaling node group to 0 before destroy..."
             aws eks update-nodegroup-config \
               --cluster-name uplatform-cluster \
               --nodegroup-name uplatform-nodes \
               --region ${{ env.AWS_REGION }} \
               --scaling-config minSize=0,maxSize=4,desiredSize=0 2>/dev/null || true
-
-            echo "Waiting 60s for nodes to drain..."
             sleep 60
-          else
-            echo "Cluster not found or not active — skipping scale down"
           fi
 
       - name: Terraform Destroy
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          terraform destroy \
-            -auto-approve \
-            -input=false
-        # If destroy gets stuck on a resource, it will timeout after 60 min
-        # and you can re-run — Terraform will skip already-destroyed resources
+        run: terraform destroy -auto-approve -input=false
         timeout-minutes: 60
-
-      - name: Confirm destroy complete
-        run: |
-          echo "========================================"
-          echo "  Infrastructure destroyed successfully"
-          echo "========================================"
-          echo ""
-          echo "What was NOT destroyed (intentional):"
-          echo "  - S3 state bucket (has prevent_destroy = true)"
-          echo "  - DynamoDB lock table"
-          echo "  - Bootstrap IAM roles and OIDC provider"
-          echo ""
-          echo "To recreate everything:"
-          echo "  Push any change to terraform/** and the apply pipeline runs"
-          echo ""
-          echo "Monthly savings from destroy:"
-          echo "  EKS control plane: ~$72"
-          echo "  EC2 nodes:         ~$19"
-          echo "  NAT Gateway:       ~$32"
-          echo "  VPC endpoints:     ~$36"
-          echo "  RDS:               ~$12"
-          echo "  Total saved:       ~$171/month"

@@ -12,7 +12,7 @@ github_org  = "Jp2op"
 github_repo = "user-platform-v2"
 
 # From: terraform output -chdir=bootstrap github_oidc_provider_arn
-github_oidc_provider_arn = "FILL_FROM_BOOTSTRAP_OUTPUT"
+github_oidc_provider_arn = "arn:aws:iam::796197769514:oidc-provider/token.actions.githubusercontent.com"
 
 # Network — single AZ (enough for a project)
 # To go multi-AZ: add more CIDRs, e.g. ["10.0.1.0/24", "10.0.2.0/24"]
