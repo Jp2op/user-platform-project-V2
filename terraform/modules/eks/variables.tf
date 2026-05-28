@@ -37,6 +37,7 @@ variable "node_capacity_type" {
 }
 
 
+variable "node_instance_types" {
   description = "EC2 instance types for the node group. List allows Spot to pick cheapest available."
   type        = list(string)
   default     = ["t3.medium", "t3a.medium"]
