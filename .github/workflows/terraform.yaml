@@ -199,7 +199,9 @@ jobs:
   terraform-apply:
     name: Terraform Apply
     runs-on: ubuntu-latest
+    needs: terraform-plan
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
 
     steps:
       - name: Checkout
@@ -228,4 +230,3 @@ jobs:
       - name: Print Outputs
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform output
-        # Outputs tell you the ArgoCD URL, kubeconfig command, role ARNs, etc.

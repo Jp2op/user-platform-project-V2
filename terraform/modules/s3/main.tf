@@ -67,6 +67,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "loki" {
     id     = "expire-old-logs"
     status = "Enabled"
 
+    # Empty filter = apply to all objects
+    filter {}
+
     expiration {
       days = 30
     }

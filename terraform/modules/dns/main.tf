@@ -1,17 +1,10 @@
 # -----------------------------------------------------------------------------
 # DNS MODULE
 #
-# Creates:
-#   - ACM certificate for your domain (DNS validated, wildcard covers subdomains)
-#   - Route53 validation records (Terraform creates these automatically)
-#   - Route53 A record: domain → ALB  (app)
-#   - Route53 A record: grafana.domain → ALB  (monitoring)
-#
-# No CloudFront — frontend is served from Nginx in Kubernetes via the same ALB.
-#
-# Pre-requisite: Route53 hosted zone for your domain must already exist.
-# Terraform fetches it via data source — it does not create it.
-# (Buying/delegating a domain is a manual one-time step.)
+# Creates ACM certificate + Route53 records.
+# Route53 records only created when alb_dns_name is provided.
+# On first apply alb_dns_name is empty — only the cert gets created.
+# After K8s bootstrap provides the ALB DNS, fill it in tfvars and re-apply.
 # -----------------------------------------------------------------------------
 
 terraform {
@@ -23,17 +16,13 @@ terraform {
   }
 }
 
-# Fetch the existing hosted zone by domain name
 data "aws_route53_zone" "main" {
   name         = var.domain_name
   private_zone = false
 }
 
 # -----------------------------------------------------------------------------
-# ACM CERTIFICATE
-# Wildcard covers: domain.com + *.domain.com (all subdomains)
-# DNS validated — Terraform creates the CNAME records automatically.
-# Certificate is REGIONAL (ap-south-1) for use with ALB.
+# ACM CERTIFICATE — wildcard covers domain + all subdomains
 # -----------------------------------------------------------------------------
 
 resource "aws_acm_certificate" "main" {
@@ -42,7 +31,6 @@ resource "aws_acm_certificate" "main" {
   validation_method         = "DNS"
 
   lifecycle {
-    # Create replacement before destroying old cert — zero downtime rotation
     create_before_destroy = true
   }
 
@@ -51,7 +39,6 @@ resource "aws_acm_certificate" "main" {
   })
 }
 
-# Terraform creates these CNAME records in Route53 to prove domain ownership
 resource "aws_route53_record" "cert_validation" {
   for_each = {
     for dvo in aws_acm_certificate.main.domain_validation_options : dvo.domain_name => {
@@ -69,8 +56,6 @@ resource "aws_route53_record" "cert_validation" {
   zone_id         = data.aws_route53_zone.main.zone_id
 }
 
-# Wait for ACM to validate before outputting the cert ARN
-# This can take 1-5 minutes
 resource "aws_acm_certificate_validation" "main" {
   certificate_arn         = aws_acm_certificate.main.arn
   validation_record_fqdns = [for r in aws_route53_record.cert_validation : r.fqdn]
@@ -78,12 +63,13 @@ resource "aws_acm_certificate_validation" "main" {
 
 # -----------------------------------------------------------------------------
 # ROUTE53 RECORDS
-# Both point to the same ALB — routing to the right backend happens at
-# the ALB listener level via host-based routing rules.
+# Only created when alb_dns_name is provided (after K8s bootstrap)
+# count = 0 on first apply, count = 1 after ALB exists
 # -----------------------------------------------------------------------------
 
-# Root domain → ALB (serves frontend Nginx and /api/* backend)
 resource "aws_route53_record" "app" {
+  count   = var.alb_dns_name != "" ? 1 : 0
+
   zone_id = data.aws_route53_zone.main.zone_id
   name    = var.domain_name
   type    = "A"
@@ -95,8 +81,9 @@ resource "aws_route53_record" "app" {
   }
 }
 
-# www → ALB
 resource "aws_route53_record" "www" {
+  count   = var.alb_dns_name != "" ? 1 : 0
+
   zone_id = data.aws_route53_zone.main.zone_id
   name    = "www.${var.domain_name}"
   type    = "A"
@@ -108,8 +95,9 @@ resource "aws_route53_record" "www" {
   }
 }
 
-# grafana subdomain → ALB (ALB routes to monitoring namespace by hostname)
 resource "aws_route53_record" "grafana" {
+  count   = var.alb_dns_name != "" ? 1 : 0
+
   zone_id = data.aws_route53_zone.main.zone_id
   name    = "grafana.${var.domain_name}"
   type    = "A"
