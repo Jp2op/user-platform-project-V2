@@ -1,0 +1,233 @@
+# -----------------------------------------------------------------------------
+# TERRAFORM PIPELINE
+#
+# Triggers:
+#   - PR touching terraform/**  → runs plan, posts diff as PR comment
+#   - Push to main touching terraform/** → runs apply
+#
+# Security:
+#   - Uses OIDC — no AWS keys in GitHub secrets
+#   - Pipeline role only (trust policy in bootstrap blocks all other principals)
+#   - Plan output posted as PR comment so you review infra changes like code
+#   - Concurrency lock prevents two applies running simultaneously
+#
+# Required GitHub secrets:
+#   - AWS_REGION              (e.g. ap-south-1)
+#   - TF_PIPELINE_ROLE_ARN    (from bootstrap output: terraform_pipeline_role_arn)
+#
+# Required GitHub variables:
+#   - None — everything is in terraform.tfvars committed to the repo
+# -----------------------------------------------------------------------------
+
+name: Terraform
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform.yaml"
+
+  pull_request:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform.yaml"
+
+  # Allow manual trigger for emergency applies
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action to run"
+        required: true
+        default: "plan"
+        type: choice
+        options: [plan, apply, destroy]
+
+# Prevent concurrent applies — state lock + this ensures one apply at a time
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false  # don't cancel — queue instead
+
+permissions:
+  id-token: write   # required for OIDC token generation
+  contents: read    # required to checkout code
+  pull-requests: write  # required to post plan as PR comment
+
+env:
+  TF_VERSION: "1.8.5"
+  TF_WORKING_DIR: "./terraform"
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  # Terraform reads these automatically — no need to pass to CLI
+  TF_CLI_ARGS_init: "-input=false"
+  TF_CLI_ARGS_plan: "-input=false"
+  TF_CLI_ARGS_apply: "-input=false -auto-approve"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # PLAN — runs on every PR and push
+  # ---------------------------------------------------------------------------
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+
+    outputs:
+      plan_exit_code: ${{ steps.plan.outputs.exit_code }}
+      plan_stdout:    ${{ steps.plan.outputs.stdout }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TF_PIPELINE_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          # Short session — long enough for plan, not indefinitely open
+          role-session-duration: 1800  # 30 minutes
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: true  # wrapper captures stdout for PR comment
+
+      - name: Terraform Format Check
+        id: fmt
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform fmt -check -recursive
+        continue-on-error: true  # format issues are warnings, not blockers
+
+      - name: Terraform Init
+        id: init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init
+
+      - name: Terraform Validate
+        id: validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan \
+            -no-color \
+            -detailed-exitcode \
+            -out=tfplan \
+            2>&1 | tee plan_output.txt
+
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+
+          # Exit code meanings:
+          # 0 = no changes
+          # 1 = error
+          # 2 = changes present (not an error — continue)
+          if [ $EXIT_CODE -eq 1 ]; then
+            echo "Plan failed"
+            exit 1
+          fi
+
+          # Capture output for PR comment (truncate if too long)
+          PLAN_OUTPUT=$(cat plan_output.txt | tail -c 60000)
+          echo "stdout<<EOF" >> $GITHUB_OUTPUT
+          echo "$PLAN_OUTPUT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Post Plan as PR Comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `## Terraform Plan Results
+
+            | Step | Status |
+            |------|--------|
+            | Format | ${{ steps.fmt.outcome == 'success' && '✅' || '⚠️' }} |
+            | Init | ${{ steps.init.outcome == 'success' && '✅' || '❌' }} |
+            | Validate | ${{ steps.validate.outcome == 'success' && '✅' || '❌' }} |
+            | Plan | ${{ steps.plan.outcome == 'success' && '✅' || '❌' }} |
+
+            <details><summary>Show Plan Output</summary>
+
+            \`\`\`hcl
+            ${{ steps.plan.outputs.stdout }}
+            \`\`\`
+
+            </details>
+
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
+            // Delete previous plan comments to keep PR clean
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' && comment.body.includes('Terraform Plan Results')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: output
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: output
+              });
+            }
+
+      - name: Fail if Plan errored
+        if: steps.plan.outputs.exit_code == '1'
+        run: exit 1
+
+  # ---------------------------------------------------------------------------
+  # APPLY — runs only on push to main (after PR merge)
+  # ---------------------------------------------------------------------------
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production  # requires environment approval if configured in GitHub
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TF_PIPELINE_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-duration: 3600  # 1 hour for apply
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -auto-approve -input=false
+
+      - name: Print Outputs
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform output
+        # Outputs tell you the ArgoCD URL, kubeconfig command, role ARNs, etc.
