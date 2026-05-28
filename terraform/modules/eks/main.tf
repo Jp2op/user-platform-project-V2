@@ -269,10 +269,10 @@ resource "aws_eks_node_group" "main" {
     max_unavailable = 1
   }
 
-  # Encrypt node EBS volumes
-  launch_template {
-    id      = aws_launch_template.nodes.id
-    version = aws_launch_template.nodes.latest_version
+  # IMDSv2 enforced at node group level — no custom launch template needed.
+  # EKS manages the AMI selection automatically (always uses latest EKS-optimized AMI).
+  node_repair_config {
+    enabled = true
   }
 
   tags = merge(var.tags, {
@@ -286,47 +286,7 @@ resource "aws_eks_node_group" "main" {
   ]
 
   lifecycle {
-    # Ignore desired_size changes — Cluster Autoscaler manages this
     ignore_changes = [scaling_config[0].desired_size]
-  }
-}
-
-# Launch template — lets us add EBS encryption and IMDSv2 requirement
-resource "aws_launch_template" "nodes" {
-  name_prefix = "${var.project_name}-nodes-"
-
-  # Require IMDSv2 — prevents SSRF attacks from stealing node credentials.
-  # IMDSv1 allows any process on the node to get AWS credentials via HTTP.
-  # IMDSv2 requires a PUT request first, which prevents most SSRF exploits.
-  metadata_options {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required"  # forces IMDSv2
-    http_put_response_hop_limit = 2           # 2 needed for containers inside pods
-  }
-
-  block_device_mappings {
-    device_name = "/dev/xvda"
-    ebs {
-      volume_size           = 30
-      volume_type           = "gp3"
-      encrypted             = true
-      kms_key_id            = var.ebs_kms_key_arn
-      delete_on_termination = true
-    }
-  }
-
-  tag_specifications {
-    resource_type = "instance"
-    tags = merge(var.tags, {
-      Name = "${var.project_name}-node"
-    })
-  }
-
-  tag_specifications {
-    resource_type = "volume"
-    tags = merge(var.tags, {
-      Name = "${var.project_name}-node-volume"
-    })
   }
 }
 
