@@ -78,5 +78,5 @@ jobs:
 
       - name: Terraform Destroy
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform destroy -auto-approve -input=false
+        run: terraform destroy -auto-approve -input=false 2>&1 | tail -100
         timeout-minutes: 60
