@@ -78,5 +78,14 @@ jobs:
 
       - name: Terraform Destroy
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform destroy -auto-approve -input=false 2>&1 | tail -100
+        run: |
+          terraform destroy -auto-approve -input=false \
+            -target=module.eks \
+            -target=module.vpc \
+            -target=module.rds \
+            -target=module.iam \
+            -target=module.kms \
+            -target=module.waf \
+            -target=module.dns \
+            2>&1
         timeout-minutes: 60
