@@ -269,8 +269,6 @@ resource "aws_eks_node_group" "main" {
     max_unavailable = 1
   }
 
-  # IMDSv2 enforced at node group level — no custom launch template needed.
-  # EKS manages the AMI selection automatically (always uses latest EKS-optimized AMI).
   node_repair_config {
     enabled = true
   }
@@ -286,9 +284,11 @@ resource "aws_eks_node_group" "main" {
   ]
 
   lifecycle {
+    # Ignore desired_size changes — Cluster Autoscaler manages this
     ignore_changes = [scaling_config[0].desired_size]
   }
 }
+
 
 # -----------------------------------------------------------------------------
 # OIDC PROVIDER — enables IRSA (IAM Roles for Service Accounts)
