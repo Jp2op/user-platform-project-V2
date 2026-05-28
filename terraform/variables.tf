@@ -74,6 +74,12 @@ variable "github_oidc_provider_arn" {
 }
 
 # EKS nodes
+variable "node_capacity_type" {
+  description = "ON_DEMAND or SPOT. Use ON_DEMAND when you need the cluster up quickly."
+  type        = string
+  default     = "ON_DEMAND"
+}
+
 variable "node_instance_types" {
   description = "Multiple types let Spot pick cheapest available in the AZ."
   type        = list(string)

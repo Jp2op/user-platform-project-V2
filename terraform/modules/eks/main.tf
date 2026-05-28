@@ -255,7 +255,7 @@ resource "aws_eks_node_group" "main" {
   subnet_ids      = var.private_subnet_ids  # nodes go in PRIVATE subnets
 
   # Spot capacity type for cost savings
-  capacity_type  = "SPOT"
+  capacity_type  = var.node_capacity_type
   instance_types = var.node_instance_types
 
   scaling_config {

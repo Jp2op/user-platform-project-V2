@@ -12,16 +12,17 @@ github_org  = "Jp2op"
 github_repo = "user-platform-v2"
 
 # From: terraform output -chdir=bootstrap github_oidc_provider_arn
-github_oidc_provider_arn = "arn:aws:iam::796197769514:oidc-provider/token.actions.githubusercontent.com"
+github_oidc_provider_arn = "FILL_FROM_BOOTSTRAP_OUTPUT"
 
 # Network — single AZ (enough for a project)
 # To go multi-AZ: add more CIDRs, e.g. ["10.0.1.0/24", "10.0.2.0/24"]
 vpc_cidr              = "10.0.0.0/16"
-public_subnet_cidrs   = ["10.0.1.0/24", "10.0.2.0/24"]
-private_subnet_cidrs  = ["10.0.10.0/24", "10.0.11.0/24"]
-isolated_subnet_cidrs = ["10.0.20.0/24", "10.0.21.0/24"]
+public_subnet_cidrs   = ["10.0.1.0/24"]
+private_subnet_cidrs  = ["10.0.10.0/24"]
+isolated_subnet_cidrs = ["10.0.20.0/24"]
 
-# EKS nodes — Spot for cost saving
+# EKS nodes
+node_capacity_type  = "ON_DEMAND"  # change to SPOT to save ~70% cost (slower to provision)
 node_instance_types = ["t3.medium", "t3a.medium"]
 node_desired_size   = 2
 node_min_size       = 1
