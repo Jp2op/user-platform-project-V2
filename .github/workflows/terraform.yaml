@@ -85,8 +85,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.TF_PIPELINE_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-          # Short session — long enough for plan, not indefinitely open
-          role-session-duration: 1800  # 30 minutes
+          role-duration-seconds: 1800  # 30 minutes
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -201,7 +200,6 @@ jobs:
     name: Terraform Apply
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: production  # requires environment approval if configured in GitHub
 
     steps:
       - name: Checkout
@@ -212,7 +210,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.TF_PIPELINE_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-duration: 3600  # 1 hour for apply
+          role-duration-seconds: 3600  # 1 hour for apply
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3

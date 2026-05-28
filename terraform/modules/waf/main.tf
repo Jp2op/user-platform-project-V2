@@ -2,15 +2,11 @@
 # WAF MODULE
 #
 # AWS WAF v2 WebACL with:
-#   - AWS Managed Rules (AWSManagedRulesCommonRuleSet) — OWASP top 10
-#   - AWS Managed Rules (AWSManagedRulesKnownBadInputsRuleSet) — bad bots
-#   - AWS Managed Rules (AWSManagedRulesSQLiRuleSet) — SQL injection
-#   - IP reputation list (AWSManagedRulesAmazonIpReputationList) — known bad IPs
-#   - Rate limiting — 2000 requests per 5 minutes per IP
-#
-# Associated to the ALB that fronts EKS.
-# CloudFront has its own WAF association (must be in us-east-1 for CF).
-# This WAF is regional (ap-south-1) for the ALB.
+#   - AWS Managed Rules (CommonRuleSet)      — OWASP top 10
+#   - AWS Managed Rules (KnownBadInputs)     — bad bots, exploits
+#   - AWS Managed Rules (SQLiRuleSet)        — SQL injection
+#   - AWS Managed Rules (IpReputationList)   — known bad IPs
+#   - Rate limiting                          — 2000 req/5min per IP
 #
 # Cost: ~$5/month base + $0.60 per million requests
 # -----------------------------------------------------------------------------
@@ -27,18 +23,20 @@ terraform {
 resource "aws_wafv2_web_acl" "main" {
   name        = "${var.project_name}-waf"
   description = "WAF for ${var.project_name} ALB"
-  scope       = "REGIONAL"  # REGIONAL for ALB; CLOUDFRONT for CloudFront (needs us-east-1 provider)
+  scope       = "REGIONAL"
 
   default_action {
-    allow {}  # default allow — rules below block specific bad traffic
+    allow {}
   }
 
-  # Rule 1: IP Reputation — blocks known malicious IPs (botnets, scrapers, attackers)
+  # Rule 1: IP Reputation
   rule {
     name     = "AWSManagedRulesAmazonIpReputationList"
     priority = 1
 
-    override_action { none {} }
+    override_action {
+      none {}
+    }
 
     statement {
       managed_rule_group_statement {
@@ -54,24 +52,25 @@ resource "aws_wafv2_web_acl" "main" {
     }
   }
 
-  # Rule 2: Common Rule Set — OWASP Top 10 protections
-  # Blocks: XSS, path traversal, file inclusion, protocol attacks
+  # Rule 2: Common Rule Set — OWASP Top 10
   rule {
     name     = "AWSManagedRulesCommonRuleSet"
     priority = 2
 
-    override_action { none {} }
+    override_action {
+      none {}
+    }
 
     statement {
       managed_rule_group_statement {
         name        = "AWSManagedRulesCommonRuleSet"
         vendor_name = "AWS"
 
-        # SizeRestrictions_BODY can cause false positives with large API payloads
-        # Override to COUNT instead of BLOCK so we can monitor before enforcing
         rule_action_override {
           name = "SizeRestrictions_BODY"
-          action_to_use { count {} }
+          action_to_use {
+            count {}
+          }
         }
       }
     }
@@ -83,12 +82,14 @@ resource "aws_wafv2_web_acl" "main" {
     }
   }
 
-  # Rule 3: Known Bad Inputs — blocks request patterns known to exploit vulnerabilities
+  # Rule 3: Known Bad Inputs
   rule {
     name     = "AWSManagedRulesKnownBadInputsRuleSet"
     priority = 3
 
-    override_action { none {} }
+    override_action {
+      none {}
+    }
 
     statement {
       managed_rule_group_statement {
@@ -104,12 +105,14 @@ resource "aws_wafv2_web_acl" "main" {
     }
   }
 
-  # Rule 4: SQL Injection — dedicated SQL injection protection
+  # Rule 4: SQL Injection
   rule {
     name     = "AWSManagedRulesSQLiRuleSet"
     priority = 4
 
-    override_action { none {} }
+    override_action {
+      none {}
+    }
 
     statement {
       managed_rule_group_statement {
@@ -125,13 +128,14 @@ resource "aws_wafv2_web_acl" "main" {
     }
   }
 
-  # Rule 5: Rate limiting — prevents brute force and DDoS
-  # 2000 requests per 5 minutes per IP. Adjust based on your traffic patterns.
+  # Rule 5: Rate limiting — 2000 requests per 5 minutes per IP
   rule {
     name     = "RateLimitPerIP"
     priority = 5
 
-    action { block {} }
+    action {
+      block {}
+    }
 
     statement {
       rate_based_statement {
@@ -158,9 +162,8 @@ resource "aws_wafv2_web_acl" "main" {
   })
 }
 
-# WAF logs to CloudWatch — useful for debugging blocked requests
+# WAF logs to CloudWatch
 resource "aws_cloudwatch_log_group" "waf" {
-  # WAF log group names must start with aws-waf-logs-
   name              = "aws-waf-logs-${var.project_name}"
   retention_in_days = 30
 
@@ -170,7 +173,4 @@ resource "aws_cloudwatch_log_group" "waf" {
 resource "aws_wafv2_web_acl_logging_configuration" "main" {
   log_destination_configs = [aws_cloudwatch_log_group.waf.arn]
   resource_arn            = aws_wafv2_web_acl.main.arn
-
-  # Log all requests (both allowed and blocked)
-  # In high-traffic scenarios, enable redacted_fields to exclude sensitive data
 }

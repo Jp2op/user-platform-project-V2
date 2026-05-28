@@ -13,4 +13,7 @@ variable "alb_zone_id" {
   default     = "ZP97RAFLXTNZK"
 }
 
-variable "tags" { type = map(string); default = {} }
+variable "tags" {
+  type    = map(string)
+  default = {}
+}
