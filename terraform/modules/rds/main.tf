@@ -190,11 +190,6 @@ resource "aws_db_instance" "main" {
   monitoring_interval = 60  # seconds
   monitoring_role_arn = aws_iam_role.rds_monitoring.arn
 
-  # Enable Performance Insights — query-level performance visibility
-  performance_insights_enabled          = true
-  performance_insights_retention_period = 7  # days (free tier is 7)
-  performance_insights_kms_key_id       = var.kms_key_arn
-
   # Auto minor version upgrades — security patches applied automatically
   auto_minor_version_upgrade = true
 

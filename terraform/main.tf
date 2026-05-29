@@ -166,6 +166,7 @@ module "iam" {
   s3_kms_key_arn      = module.kms.s3_key_arn
 
   tags = local.common_tags
+  depends_on = [module.eks]
 }
 
 # -----------------------------------------------------------------------------
