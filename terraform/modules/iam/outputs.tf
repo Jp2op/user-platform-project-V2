@@ -27,8 +27,3 @@ output "github_prod_deploy_role_arn" {
   description = "Paste into GitHub secret AWS_ROLE_TO_ASSUME_PROD (PROD pipeline)"
   value       = aws_iam_role.github_prod_deploy.arn
 }
-
-output "ebs_csi_role_arn" {
-  description = "Pass to EBS CSI addon as service_account_role_arn"
-  value       = aws_iam_role.ebs_csi.arn
-}

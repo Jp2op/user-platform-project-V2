@@ -313,6 +313,43 @@ resource "aws_iam_openid_connect_provider" "eks" {
   })
 }
 
+
+# -----------------------------------------------------------------------------
+# EBS CSI IRSA ROLE
+# Created inside the EKS module (not IAM module) because:
+#   - It's an EKS addon concern, not an application concern
+#   - It needs the OIDC provider which is created in this module
+#   - Putting it in the IAM module creates a circular dependency
+# -----------------------------------------------------------------------------
+
+resource "aws_iam_role" "ebs_csi" {
+  name = "${var.project_name}-ebs-csi-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = aws_iam_openid_connect_provider.eks.arn
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:aud" = "sts.amazonaws.com"
+          "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub" = "system:serviceaccount:kube-system:ebs-csi-controller-sa"
+        }
+      }
+    }]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi_irsa" {
+  role       = aws_iam_role.ebs_csi.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
 # -----------------------------------------------------------------------------
 # EKS ADDONS
 #
@@ -358,7 +395,7 @@ resource "aws_eks_addon" "ebs_csi" {
 
   # EBS CSI needs an IRSA role to authenticate to AWS for EBS operations
   # We use the node role ARN which already has AmazonEBSCSIDriverPolicy attached
-  service_account_role_arn = var.ebs_csi_role_arn
+  service_account_role_arn = aws_iam_role.ebs_csi.arn
 
   tags = var.tags
 

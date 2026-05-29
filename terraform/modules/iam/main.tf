@@ -666,31 +666,3 @@ resource "aws_eks_access_policy_association" "github_prod_deploy" {
 
   depends_on = [aws_eks_access_entry.github_prod_deploy]
 }
-
-resource "aws_iam_role" "ebs_csi" {
-  name = "${var.project_name}-ebs-csi-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Federated = var.oidc_provider_arn
-      }
-      Action = "sts:AssumeRoleWithWebIdentity"
-      Condition = {
-        StringEquals = {
-          "${local.oidc_id}:aud" = "sts.amazonaws.com"
-          "${local.oidc_id}:sub" = "system:serviceaccount:kube-system:ebs-csi-controller-sa"
-        }
-      }
-    }]
-  })
-
-  tags = merge(var.tags, { Name = "${var.project_name}-ebs-csi-role" })
-}
-
-resource "aws_iam_role_policy_attachment" "ebs_csi" {
-  role       = aws_iam_role.ebs_csi.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
-}
