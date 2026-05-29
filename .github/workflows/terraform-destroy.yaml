@@ -48,7 +48,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.TF_PIPELINE_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-          role-duration-seconds: 3600
+          role-session-duration: 3600
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -68,6 +68,7 @@ jobs:
             --output text 2>/dev/null || echo "NOT_FOUND")
 
           if [ "$CLUSTER_STATUS" == "ACTIVE" ]; then
+            echo "Scaling down nodes..."
             aws eks update-nodegroup-config \
               --cluster-name uplatform-cluster \
               --nodegroup-name uplatform-nodes \
@@ -76,8 +77,22 @@ jobs:
             sleep 60
           fi
 
+      - name: Disable RDS deletion protection
+        run: |
+          aws rds describe-db-instances \
+            --db-instance-identifier uplatform-mysql \
+            --region ${{ env.AWS_REGION }} \
+            --query "DBInstances[0].DBInstanceIdentifier" \
+            --output text 2>/dev/null && \
+          aws rds modify-db-instance \
+            --db-instance-identifier uplatform-mysql \
+            --no-deletion-protection \
+            --apply-immediately \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          echo "Waiting 30s for modification to apply..."
+          sleep 30
+
       - name: Empty S3 buckets
-        # Must empty versioned buckets before Terraform can delete them
         run: |
           for BUCKET in $(aws s3api list-buckets \
             --query "Buckets[?contains(Name,'uplatform')].Name" \
@@ -85,7 +100,6 @@ jobs:
 
             echo "Emptying $BUCKET..."
 
-            # Delete all versioned objects
             VERSIONS=$(aws s3api list-object-versions \
               --bucket "$BUCKET" \
               --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
@@ -95,7 +109,6 @@ jobs:
                 --bucket "$BUCKET" --delete file:///dev/stdin 2>/dev/null || true
             fi
 
-            # Delete all delete markers
             MARKERS=$(aws s3api list-object-versions \
               --bucket "$BUCKET" \
               --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' \
@@ -105,11 +118,69 @@ jobs:
                 --bucket "$BUCKET" --delete file:///dev/stdin 2>/dev/null || true
             fi
 
-            # Delete any remaining objects
             aws s3 rm s3://"$BUCKET" --recursive 2>/dev/null || true
-
             echo "Done: $BUCKET"
           done
+
+      - name: Force delete Secrets Manager secrets
+        run: |
+          for SECRET in $(aws secretsmanager list-secrets \
+            --region ${{ env.AWS_REGION }} \
+            --query "SecretList[?contains(Name,'uplatform')].Name" \
+            --output text 2>/dev/null); do
+            echo "Force deleting secret: $SECRET"
+            aws secretsmanager delete-secret \
+              --secret-id "$SECRET" \
+              --force-delete-without-recovery \
+              --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          done
+
+      - name: Clean orphan VPC resources
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag:Project,Values=uplatform" \
+            --query "Vpcs[0].VpcId" \
+            --output text 2>/dev/null)
+
+          if [ "$VPC_ID" == "None" ] || [ -z "$VPC_ID" ]; then
+            echo "No VPC found, skipping"
+            exit 0
+          fi
+
+          echo "Found VPC: $VPC_ID"
+
+          # Delete orphan subnets
+          for SUBNET in $(aws ec2 describe-subnets \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "Subnets[].SubnetId" \
+            --output text 2>/dev/null); do
+            echo "Deleting orphan subnet: $SUBNET"
+            aws ec2 delete-subnet --subnet-id "$SUBNET" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          done
+
+          # Delete orphan security groups (skip default)
+          for SG in $(aws ec2 describe-security-groups \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "SecurityGroups[?GroupName!='default'].GroupId" \
+            --output text 2>/dev/null); do
+            echo "Deleting orphan SG: $SG"
+            aws ec2 delete-security-group --group-id "$SG" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          done
+
+          # Delete orphan VPC endpoints
+          ENDPOINTS=$(aws ec2 describe-vpc-endpoints \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "VpcEndpoints[?State!='deleted'].VpcEndpointId" \
+            --output text 2>/dev/null)
+          if [ -n "$ENDPOINTS" ]; then
+            echo "Deleting orphan endpoints: $ENDPOINTS"
+            aws ec2 delete-vpc-endpoints --vpc-endpoint-ids $ENDPOINTS --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            sleep 30
+          fi
 
       - name: Terraform Destroy
         working-directory: ${{ env.TF_WORKING_DIR }}
