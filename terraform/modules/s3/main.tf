@@ -24,10 +24,6 @@ resource "aws_s3_bucket" "loki" {
   # Account ID suffix ensures global uniqueness without manual naming
   bucket = "${var.project_name}-loki-logs-${data.aws_caller_identity.current.account_id}"
 
-  lifecycle {
-    prevent_destroy = true
-  }
-
   tags = merge(var.tags, {
     Name    = "${var.project_name}-loki-logs"
     Purpose = "loki-log-storage"

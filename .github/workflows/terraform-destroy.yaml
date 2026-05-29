@@ -48,7 +48,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.TF_PIPELINE_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-          role-duration-seconds: 3600
+          role-session-duration: 3600
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -76,16 +76,42 @@ jobs:
             sleep 60
           fi
 
+      - name: Empty S3 buckets
+        # Must empty versioned buckets before Terraform can delete them
+        run: |
+          for BUCKET in $(aws s3api list-buckets \
+            --query "Buckets[?contains(Name,'uplatform')].Name" \
+            --output text); do
+
+            echo "Emptying $BUCKET..."
+
+            # Delete all versioned objects
+            VERSIONS=$(aws s3api list-object-versions \
+              --bucket "$BUCKET" \
+              --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
+              --output json 2>/dev/null)
+            if echo "$VERSIONS" | grep -q '"Key"'; then
+              echo "$VERSIONS" | aws s3api delete-objects \
+                --bucket "$BUCKET" --delete file:///dev/stdin 2>/dev/null || true
+            fi
+
+            # Delete all delete markers
+            MARKERS=$(aws s3api list-object-versions \
+              --bucket "$BUCKET" \
+              --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' \
+              --output json 2>/dev/null)
+            if echo "$MARKERS" | grep -q '"Key"'; then
+              echo "$MARKERS" | aws s3api delete-objects \
+                --bucket "$BUCKET" --delete file:///dev/stdin 2>/dev/null || true
+            fi
+
+            # Delete any remaining objects
+            aws s3 rm s3://"$BUCKET" --recursive 2>/dev/null || true
+
+            echo "Done: $BUCKET"
+          done
+
       - name: Terraform Destroy
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          terraform destroy -auto-approve -input=false \
-            -target=module.eks \
-            -target=module.vpc \
-            -target=module.rds \
-            -target=module.iam \
-            -target=module.kms \
-            -target=module.waf \
-            -target=module.dns \
-            2>&1
+        run: terraform destroy -auto-approve -input=false 2>&1
         timeout-minutes: 60
