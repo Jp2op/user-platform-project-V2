@@ -358,7 +358,7 @@ resource "aws_eks_addon" "ebs_csi" {
 
   # EBS CSI needs an IRSA role to authenticate to AWS for EBS operations
   # We use the node role ARN which already has AmazonEBSCSIDriverPolicy attached
-  service_account_role_arn = aws_iam_role.nodes.arn
+  service_account_role_arn = var.ebs_csi_role_arn
 
   tags = var.tags
 

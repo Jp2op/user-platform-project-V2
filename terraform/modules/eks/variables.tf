@@ -20,6 +20,12 @@ variable "kms_key_arn" {
   type        = string
 }
 
+variable "ebs_csi_role_arn" {
+  description = "IRSA role ARN for EBS CSI driver service account"
+  type        = string
+  default     = ""
+}
+
 variable "ebs_kms_key_arn" {
   description = "KMS key for encrypting node EBS volumes"
   type        = string
