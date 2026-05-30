@@ -1,0 +1,30 @@
+# Dependencies — installed inside container
+**/node_modules
+
+# Build artifacts — built inside container
+client/public/bundle.js
+client/public/bundle.js.LICENSE.txt
+client/public/*.map
+
+# Git
+.git
+.gitignore
+
+# Terraform — not needed in Docker context
+terraform/
+
+# Docs
+docs/
+README.md
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.yaml
+.dockerignore

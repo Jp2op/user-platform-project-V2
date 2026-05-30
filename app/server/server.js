@@ -1,47 +1,76 @@
 const express = require('express');
-const bodyParser = require('body-parser');
-const mysql = require('mysql');
+const mysql = require('mysql2');
 const cors = require('cors');
-const path = require('path');
 
 const app = express();
-const port = process.env.PORT || 5000; // Use an environment variable for the port
+const port = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-// Database connection
-const db = mysql.createConnection({
-  host: process.env.DB_HOST || 'localhost', // Use 'mysql' to connect to MySQL container
+// Database connection with retry logic
+const dbConfig = {
+  host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'appuser',
   password: process.env.DB_PASSWORD || 'password123',
   database: process.env.DB_NAME || 'test_db',
-});
+};
 
-db.connect((err) => {
-  if (err) {
-    console.error('Database connection failed:', err.stack);
-    process.exit(1);
-  }
-  console.log('Database connected.');
+let db;
 
-  // Initialize database with `users` table if it doesn't exist
-  const createUsersTable = `
-    CREATE TABLE IF NOT EXISTS users (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      email VARCHAR(255) NOT NULL UNIQUE,
-      role ENUM('Admin', 'User') NOT NULL
-    )
-  `;
+function connectWithRetry() {
+  db = mysql.createConnection(dbConfig);
 
-  db.query(createUsersTable, (err, results) => {
+  db.connect((err) => {
     if (err) {
-      console.error('Failed to create users table:', err.stack);
-      process.exit(1);
+      console.error('Database connection failed, retrying in 5s...', err.message);
+      setTimeout(connectWithRetry, 5000);
+      return;
     }
-    console.log('Users table initialized or already exists.');
+    console.log('Database connected.');
+
+    const createUsersTable = `
+      CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        role ENUM('Admin', 'User') NOT NULL
+      )
+    `;
+
+    db.query(createUsersTable, (err) => {
+      if (err) {
+        console.error('Failed to create users table:', err.message);
+        return;
+      }
+      console.log('Users table ready.');
+    });
+  });
+
+  db.on('error', (err) => {
+    console.error('Database error:', err.message);
+    if (err.code === 'PROTOCOL_CONNECTION_LOST') {
+      console.log('Reconnecting to database...');
+      connectWithRetry();
+    } else {
+      throw err;
+    }
+  });
+}
+
+connectWithRetry();
+
+// Health check — K8s liveness and readiness probes
+app.get('/api/health', (req, res) => {
+  if (!db || db.state === 'disconnected') {
+    return res.status(503).json({ status: 'unhealthy', reason: 'database disconnected' });
+  }
+  db.ping((err) => {
+    if (err) {
+      return res.status(503).json({ status: 'unhealthy', reason: err.message });
+    }
+    res.json({ status: 'healthy' });
   });
 });
 
@@ -86,16 +115,30 @@ app.delete('/api/users/:id', (req, res) => {
   });
 });
 
-// Serve static files from the client/public directory
-app.use(express.static(path.join(__dirname, '../client/public')));
-
-// Serve index.html for all other routes
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/public', 'index.html'));
-});
-
 // Start server
-app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
+const server = app.listen(port, () => {
+  console.log(`Backend API running on port ${port}`);
 });
 
+// Graceful shutdown — handles SIGTERM from K8s and dumb-init
+// Without this: SIGTERM → Node exits immediately → in-flight requests dropped
+// With this: SIGTERM → stop accepting new connections → finish in-flight → close DB → exit
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received. Starting graceful shutdown...');
+  server.close(() => {
+    console.log('HTTP server closed.');
+    if (db) {
+      db.end(() => {
+        console.log('Database connection closed.');
+        process.exit(0);
+      });
+    } else {
+      process.exit(0);
+    }
+  });
+  // Force exit after 10s if graceful shutdown hangs
+  setTimeout(() => {
+    console.error('Graceful shutdown timed out. Forcing exit.');
+    process.exit(1);
+  }, 10000);
+});

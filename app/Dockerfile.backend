@@ -1,0 +1,53 @@
+# -----------------------------------------------------------------------------
+# BACKEND DOCKERFILE — Production Grade
+#
+# Security:
+#   - Pinned Alpine version
+#   - Non-root user owns all files
+#   - dumb-init for proper PID 1 signal handling (graceful shutdown)
+#   - npm removed after install (reduces attack surface)
+#   - Health check uses Node.js (no extra binaries needed)
+#
+# Build:  docker build -t backend -f Dockerfile.backend .
+# Size:   ~120MB
+# -----------------------------------------------------------------------------
+
+FROM node:20-alpine3.21 AS base
+
+# dumb-init: lightweight init system for containers
+# Node.js does NOT handle SIGTERM properly as PID 1.
+# Without this, `kubectl delete pod` sends SIGTERM → Node ignores it →
+# K8s waits 30s → SIGKILL → unclean shutdown, dropped connections.
+# dumb-init catches SIGTERM and forwards it to Node for graceful shutdown.
+RUN apk add --no-cache dumb-init
+
+# Create non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+WORKDIR /app
+
+# Install dependencies (cached layer — only re-runs if package.json changes)
+COPY --chown=appuser:appgroup server/package.json server/package-lock.json ./
+RUN npm ci --omit=dev && \
+    npm cache clean --force && \
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
+# Copy application code
+COPY --chown=appuser:appgroup server/ .
+
+# Non-root user for runtime
+USER appuser
+
+EXPOSE 5000
+
+# Health check using Node.js — no wget/curl dependency needed
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
+  CMD node -e "const http = require('http'); \
+    const req = http.get('http://localhost:5000/api/health', (res) => { \
+      process.exit(res.statusCode === 200 ? 0 : 1); \
+    }); \
+    req.on('error', () => process.exit(1)); \
+    req.setTimeout(3000, () => { req.destroy(); process.exit(1); });"
+
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "server.js"]
