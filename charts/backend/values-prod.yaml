@@ -1,0 +1,25 @@
+# PROD environment overrides
+
+replicaCount: 2
+
+image:
+  tag: "prod-latest"  # updated by CD pipeline on merge to main
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+
+externalSecret:
+  secretName: "uplatform/prod/mysql-secret"
+
+eso:
+  serviceAccountName: "eso-prod-sa"

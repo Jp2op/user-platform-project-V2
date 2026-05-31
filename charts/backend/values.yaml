@@ -1,0 +1,122 @@
+# Default values — overridden by values-qa.yaml and values-prod.yaml
+
+replicaCount: 1
+
+image:
+  repository: jayyp2op/uplatform-backend
+  tag: "latest"
+  pullPolicy: Always
+
+# DockerHub pull secret name — created by bootstrap.sh
+imagePullSecrets:
+  - name: regcred
+
+# Service account — no IRSA annotation on the app SA
+# (ESO has its own SA with IRSA, the app doesn't need AWS access directly)
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Container port
+port: 5000
+
+# Environment variables injected directly (non-secret values)
+env:
+  PORT: "5000"
+
+# Name of the K8s Secret that ExternalSecret creates
+# The backend deployment mounts this secret as env vars
+secretRef: "mysql-secret"
+
+service:
+  type: ClusterIP
+  port: 5000
+
+# Liveness probe — restarts the pod if it fails
+# Uses /api/health which checks DB connectivity
+# initialDelaySeconds: gives the app time to start and connect to DB
+livenessProbe:
+  httpGet:
+    path: /api/health
+    port: 5000
+  initialDelaySeconds: 30
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Readiness probe — removes pod from service if it fails
+# Same endpoint but more aggressive timing
+# Pod stays running but stops receiving traffic until healthy
+readinessProbe:
+  httpGet:
+    path: /api/health
+    port: 5000
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Startup probe — gives slow-starting pods time before liveness kicks in
+# Prevents liveness probe from killing pods during initial DB connection
+startupProbe:
+  httpGet:
+    path: /api/health
+    port: 5000
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  failureThreshold: 12  # 5 + (5 * 12) = 65 seconds max startup time
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# HPA — scales pods based on CPU/memory usage
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# PDB — ensures at least 1 pod is always running during voluntary disruptions
+# (node drain, cluster upgrade, deployment rollout)
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Topology spread — distributes pods across nodes/AZs
+topologySpreadConstraints:
+  enabled: true
+
+# Network policy — controls what can talk to this pod
+networkPolicy:
+  enabled: true
+
+# SecretStore — connects ESO to AWS Secrets Manager
+secretStore:
+  region: ap-south-1
+
+# ExternalSecret — syncs a specific secret from Secrets Manager into K8s
+externalSecret:
+  refreshInterval: 1h
+  secretName: ""       # e.g. uplatform/qa/mysql-secret — set per env
+  # Maps Secrets Manager JSON keys → K8s Secret keys → env var names
+  mapping:
+    - secretKey: DB_HOST
+      remoteKey: MYSQL_HOST
+    - secretKey: DB_USER
+      remoteKey: MYSQL_USER
+    - secretKey: DB_PASSWORD
+      remoteKey: MYSQL_PASSWORD
+    - secretKey: DB_NAME
+      remoteKey: MYSQL_DATABASE
+
+# ESO service account — created by bootstrap.sh, not by this chart
+# The chart only references it in the SecretStore
+eso:
+  serviceAccountName: ""  # e.g. eso-qa-sa — set per env

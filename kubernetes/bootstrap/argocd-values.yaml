@@ -1,0 +1,40 @@
+# ArgoCD values — installed by bootstrap.sh
+# Cert ARN and WAF ARN injected via --set flags from terraform outputs
+
+configs:
+  params:
+    server.insecure: true  # ALB handles TLS termination
+
+  cm:
+    application.resourceTrackingMethod: annotation
+    timeout.reconciliation: 180s
+
+  rbac:
+    policy.default: role:readonly
+
+server:
+  replicas: 1
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+      alb.ingress.kubernetes.io/ssl-redirect: "443"
+    tls: true
+
+controller:
+  replicas: 1
+
+repoServer:
+  replicas: 1
+
+applicationSet:
+  replicas: 1
+
+dex:
+  enabled: false
+
+redis:
+  enabled: true

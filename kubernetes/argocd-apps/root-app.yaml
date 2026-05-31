@@ -1,0 +1,26 @@
+# Root App-of-Apps
+# This is the ONE manifest applied manually by bootstrap.sh
+# It tells ArgoCD to watch the kubernetes/argocd-apps/ directory
+# Any new .yaml file added there gets auto-synced
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: GITHUB_REPO_URL
+    targetRevision: main
+    path: kubernetes/argocd-apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false

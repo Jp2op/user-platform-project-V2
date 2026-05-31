@@ -1,0 +1,38 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ include "frontend.fullname" . }}
+  labels:
+    {{- include "frontend.labels" . | nindent 4 }}
+  annotations:
+    # ALB controller reads these to configure the load balancer
+    alb.ingress.kubernetes.io/scheme: {{ .Values.gateway.scheme }}
+    alb.ingress.kubernetes.io/target-type: ip
+    {{- if .Values.gateway.certificateArn }}
+    alb.ingress.kubernetes.io/certificate-arn: {{ .Values.gateway.certificateArn | quote }}
+    {{- end }}
+    {{- if .Values.gateway.wafAclArn }}
+    alb.ingress.kubernetes.io/wafv2-acl-arn: {{ .Values.gateway.wafAclArn | quote }}
+    {{- end }}
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/healthcheck-port: {{ .Values.port | quote }}
+    alb.ingress.kubernetes.io/success-codes: "200,301,302"
+spec:
+  gatewayClassName: alb
+
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443
+      allowedRoutes:
+        namespaces:
+          from: Same
+
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same
+{{- end }}

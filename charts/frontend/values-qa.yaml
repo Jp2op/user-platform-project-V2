@@ -1,0 +1,16 @@
+# QA environment overrides
+
+replicaCount: 1
+
+image:
+  tag: "latest"
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+
+gateway:
+  certificateArn: "FILL_FROM_TERRAFORM_OUTPUT"
+  wafAclArn: "FILL_FROM_TERRAFORM_OUTPUT"
+  host: qa.jp2op-project.site

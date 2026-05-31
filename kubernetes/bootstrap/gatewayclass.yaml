@@ -1,0 +1,9 @@
+# GatewayClass tells Kubernetes which controller handles Gateway resources.
+# This is cluster-scoped — one per cluster, created by bootstrap.sh
+# The AWS Load Balancer Controller watches for Gateways using this class.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: alb
+spec:
+  controllerName: gateway.k8s.aws/alb

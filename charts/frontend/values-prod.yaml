@@ -1,0 +1,24 @@
+# PROD environment overrides
+
+replicaCount: 2
+
+image:
+  tag: "prod-latest"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+
+gateway:
+  certificateArn: "FILL_FROM_TERRAFORM_OUTPUT"
+  wafAclArn: "FILL_FROM_TERRAFORM_OUTPUT"
+  host: jp2op-project.site

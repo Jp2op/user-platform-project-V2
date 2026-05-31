@@ -230,3 +230,4 @@ jobs:
       - name: Print Outputs
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform output
+        

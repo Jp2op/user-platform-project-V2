@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "backend.fullname" . }}
+  labels:
+    {{- include "backend.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "backend.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0        # never kill a pod before the new one is ready
+      maxSurge: 1              # create 1 new pod, wait for ready, then kill old
+  template:
+    metadata:
+      labels:
+        {{- include "backend.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      serviceAccountName: {{ include "backend.serviceAccountName" . }}
+
+      # Pod security context — applies to all containers in the pod
+      securityContext:
+        runAsNonRoot: true           # reject if image tries to run as root
+        fsGroup: 1000                # group ownership for mounted volumes
+        seccompProfile:
+          type: RuntimeDefault       # use container runtime's default seccomp profile
+
+      # Graceful shutdown — K8s waits this long after SIGTERM before SIGKILL
+      # Must be longer than server.js graceful shutdown timeout (10s)
+      terminationGracePeriodSeconds: 30
+
+      {{- if .Values.topologySpreadConstraints.enabled }}
+      # Spread pods across nodes — if one node dies, not all pods go down
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "backend.selectorLabels" . | nindent 14 }}
+      {{- end }}
+
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+          ports:
+            - name: http
+              containerPort: {{ .Values.port }}
+              protocol: TCP
+
+          # Container security context — per container restrictions
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false  # prevents sudo/setuid
+            readOnlyRootFilesystem: true     # container can't write to filesystem
+            capabilities:
+              drop:
+                - ALL                        # drop all Linux capabilities
+
+          # Environment variables — non-secret values set directly
+          env:
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+
+          # Secret environment variables — injected from K8s Secret
+          # The Secret is created by ExternalSecret syncing from Secrets Manager
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secretRef }}
+
+          # Probes
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.startupProbe | nindent 12 }}
+
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+          # Temp directory — needed because readOnlyRootFilesystem is true
+          # Node.js may need /tmp for internal operations
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 10Mi
