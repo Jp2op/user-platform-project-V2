@@ -4,6 +4,7 @@ $AWS_REGION          = "ap-south-1"
 $CLUSTER_NAME        = "uplatform-cluster"
 $DOMAIN              = "jp2op-project.site"
 $GITHUB_REPO         = "https://github.com/Jp2op/user-platform-project-V2"
+$VPC_ID = "vpc-0a3350eb399ba537e"
 
 $ALB_CONTROLLER_ROLE_ARN = "arn:aws:iam::796197769514:role/uplatform-alb-controller-role"
 $ESO_QA_ROLE_ARN         = "arn:aws:iam::796197769514:role/uplatform-eso-qa-role"
@@ -13,7 +14,7 @@ $ACM_CERT_ARN            = "arn:aws:acm:ap-south-1:796197769514:certificate/e990
 $WAF_ACL_ARN             = "arn:aws:wafv2:ap-south-1:796197769514:regional/webacl/uplatform-waf/762ff880-ee01-490d-8200-3202146c360d"
 
 $DOCKERHUB_USERNAME = "jayyp2op"
-$DOCKERHUB_TOKEN    = "FILL_THIS"
+$DOCKERHUB_TOKEN    = "dckr_pat_VUUGhpGJRFlW52WU5BwXGOcG2n8"
 
 $ARGOCD_VERSION         = "7.3.4"
 $ALB_CONTROLLER_VERSION = "1.8.1"
@@ -100,6 +101,7 @@ helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-contro
     --set "serviceAccount.name=aws-load-balancer-controller" `
     --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$ALB_CONTROLLER_ROLE_ARN" `
     --set "enableGatewayAPI=true" `
+    --set "vpcId=$VPC_ID" `
     --wait --timeout 5m
 
 Write-Host '   OK ALB Controller installed (Gateway API enabled)' -ForegroundColor Green

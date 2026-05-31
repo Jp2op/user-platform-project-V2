@@ -16,9 +16,11 @@ terraform {
   }
 }
 
-data "aws_route53_zone" "main" {
-  name         = var.domain_name
-  private_zone = false
+resource "aws_route53_zone" "main" {
+  name = var.domain_name
+  tags = merge(var.tags, {
+    Name = "${var.project_name}-zone"
+  })
 }
 
 # -----------------------------------------------------------------------------
@@ -53,12 +55,7 @@ resource "aws_route53_record" "cert_validation" {
   records         = [each.value.record]
   ttl             = 60
   type            = each.value.type
-  zone_id         = data.aws_route53_zone.main.zone_id
-}
-
-resource "aws_acm_certificate_validation" "main" {
-  certificate_arn         = aws_acm_certificate.main.arn
-  validation_record_fqdns = [for r in aws_route53_record.cert_validation : r.fqdn]
+  zone_id         = aws_route53_zone.main.zone_id
 }
 
 # -----------------------------------------------------------------------------
@@ -70,7 +67,7 @@ resource "aws_acm_certificate_validation" "main" {
 resource "aws_route53_record" "app" {
   count   = var.alb_dns_name != "" ? 1 : 0
 
-  zone_id = data.aws_route53_zone.main.zone_id
+  zone_id = aws_route53_zone.main.zone_id
   name    = var.domain_name
   type    = "A"
 
@@ -84,7 +81,7 @@ resource "aws_route53_record" "app" {
 resource "aws_route53_record" "www" {
   count   = var.alb_dns_name != "" ? 1 : 0
 
-  zone_id = data.aws_route53_zone.main.zone_id
+  zone_id = aws_route53_zone.main.zone_id
   name    = "www.${var.domain_name}"
   type    = "A"
 
@@ -98,10 +95,31 @@ resource "aws_route53_record" "www" {
 resource "aws_route53_record" "grafana" {
   count   = var.alb_dns_name != "" ? 1 : 0
 
-  zone_id = data.aws_route53_zone.main.zone_id
+  zone_id = aws_route53_zone.main.zone_id
   name    = "grafana.${var.domain_name}"
   type    = "A"
 
+  alias {
+    name                   = var.alb_dns_name
+    zone_id                = var.alb_zone_id
+    evaluate_target_health = true
+  }
+}
+
+resource "aws_route53_record" "argocd" {
+  count   = var.argocd_dns_name != "" ? 1 : 0
+  zone_id = aws_route53_zone.main.zone_id
+  name    = "argocd.${var.domain_name}"
+  type    = "CNAME"
+  ttl     = 300
+  records = [var.argocd_dns_name]
+}
+
+resource "aws_route53_record" "qa" {
+  count   = var.alb_dns_name != "" ? 1 : 0
+  zone_id = aws_route53_zone.main.zone_id
+  name    = "qa.${var.domain_name}"
+  type    = "A"
   alias {
     name                   = var.alb_dns_name
     zone_id                = var.alb_zone_id

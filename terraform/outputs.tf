@@ -64,3 +64,13 @@ output "next_steps" {
 
   EOT
 }
+
+output "nameservers" {
+  description = "Set these as nameservers in GoDaddy"
+  value       = module.dns.nameservers
+}
+
+output "vpc_id" {
+  description = "Needed for ALB controller bootstrap"
+  value       = module.vpc.vpc_id
+}

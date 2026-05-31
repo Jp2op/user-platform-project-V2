@@ -52,7 +52,7 @@ variable "isolated_subnet_cidrs" {
 
 # Domain
 variable "domain_name" {
-  description = "Your domain. Route53 hosted zone must already exist."
+  description = "Your domain. Terraform creates the Route53 hosted zone."
   type        = string
 }
 
@@ -125,4 +125,10 @@ variable "alb_zone_id" {
   description = "ALB hosted zone ID. Fixed per region — ap-south-1 is ZP97RAFLXTNZK."
   type        = string
   default     = "ZP97RAFLXTNZK"
+}
+
+variable "argocd_dns_name" {
+  description = "ArgoCD ALB DNS name - get from kubectl get ingress -n argocd after bootstrap"
+  type        = string
+  default     = ""
 }

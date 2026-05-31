@@ -1,0 +1,7 @@
+{
+  "Changes": [
+    {"Action":"DELETE","ResourceRecordSet":{"Name":"jp2op-project.site.","Type":"A","AliasTarget":{"HostedZoneId":"ZP97RAFLXTNZK","DNSName":"dualstack.k8s-qa-appingre-0e3ea22415-591872163.ap-south-1.elb.amazonaws.com.","EvaluateTargetHealth":false}}},
+    {"Action":"DELETE","ResourceRecordSet":{"Name":"_d4f443e8573082ff334b6f7c63d1f698.jp2op-project.site.","Type":"CNAME","TTL":60,"ResourceRecords":[{"Value":"_451c31e891ad606939bcd6a11f8ac003.jkddzztszm.acm-validations.aws."}]}},
+    {"Action":"DELETE","ResourceRecordSet":{"Name":"argocd.jp2op-project.site.","Type":"CNAME","TTL":300,"ResourceRecords":[{"Value":"k8s-argocd-argocdse-4cbeb5c817-1672629381.ap-south-1.elb.amazonaws.com"}]}}
+  ]
+}
