@@ -13,7 +13,7 @@ $ACM_CERT_ARN            = "arn:aws:acm:ap-south-1:796197769514:certificate/e990
 $WAF_ACL_ARN             = "arn:aws:wafv2:ap-south-1:796197769514:regional/webacl/uplatform-waf/762ff880-ee01-490d-8200-3202146c360d"
 
 $DOCKERHUB_USERNAME = "jayyp2op"
-$DOCKERHUB_TOKEN    = "dckr_pat_VUUGhpGJRFlW52WU5BwXGOcG2n8"
+$DOCKERHUB_TOKEN    = "FILL_THIS"
 
 $ARGOCD_VERSION         = "7.3.4"
 $ALB_CONTROLLER_VERSION = "1.8.1"
