@@ -19,6 +19,6 @@ autoscaling:
   maxReplicas: 5
 
 gateway:
-  certificateArn: "FILL_FROM_TERRAFORM_OUTPUT"
-  wafAclArn: "FILL_FROM_TERRAFORM_OUTPUT"
+  certificateArn: "arn:aws:acm:ap-south-1:796197769514:certificate/e9907b40-0aea-4ee8-8f5b-de050b17a991"
+  wafAclArn: "arn:aws:wafv2:ap-south-1:796197769514:regional/webacl/uplatform-waf/762ff880-ee01-490d-8200-3202146c360d"
   host: jp2op-project.site
