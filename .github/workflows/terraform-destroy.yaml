@@ -268,6 +268,41 @@ jobs:
             sleep 30
           fi
 
+      - name: Clean Route53 hosted zone records
+        run: |
+          ZONE_ID=$(aws route53 list-hosted-zones \
+            --query "HostedZones[?Name=='jp2op-project.site.'].Id" \
+            --output text 2>/dev/null | sed 's|/hostedzone/||')
+
+          if [ -z "$ZONE_ID" ]; then
+            echo "No hosted zone found, skipping"
+            exit 0
+          fi
+
+          echo "Cleaning non-required records from zone: $ZONE_ID"
+          RECORDS=$(aws route53 list-resource-record-sets \
+            --hosted-zone-id "$ZONE_ID" \
+            --query "ResourceRecordSets[?Type!='NS' && Type!='SOA']" \
+            --output json 2>/dev/null)
+
+          CHANGES=$(echo "$RECORDS" | python3 -c "
+          import json, sys
+          records = json.load(sys.stdin)
+          if not records:
+              sys.exit(0)
+          changes = [{'Action':'DELETE','ResourceRecordSet':r} for r in records]
+          print(json.dumps({'Changes':changes}))
+          " 2>/dev/null)
+
+          if [ -n "$CHANGES" ] && [ "$CHANGES" != "null" ]; then
+            echo "$CHANGES" | aws route53 change-resource-record-sets \
+              --hosted-zone-id "$ZONE_ID" \
+              --change-batch file:///dev/stdin 2>/dev/null || true
+            echo "Records deleted"
+          else
+            echo "No records to delete"
+          fi
+
       - name: Terraform Destroy
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform destroy -auto-approve -input=false 2>&1

@@ -1,0 +1,8 @@
+{
+  "Changes": [
+    {"Action":"DELETE","ResourceRecordSet":{"Name":"aaaa-argocd.jp2op-project.site.","Type":"TXT","TTL":300,"ResourceRecords":[{"Value":"\"heritage=external-dns,external-dns/owner=uplatform-cluster,external-dns/resource=ingress/argocd/argocd-server\""}]}},
+    {"Action":"DELETE","ResourceRecordSet":{"Name":"argocd.jp2op-project.site.","Type":"A","AliasTarget":{"HostedZoneId":"ZP97RAFLXTNZK","DNSName":"k8s-argocd-argocdse-4cbeb5c817-37482173.ap-south-1.elb.amazonaws.com.","EvaluateTargetHealth":true}}},
+    {"Action":"DELETE","ResourceRecordSet":{"Name":"argocd.jp2op-project.site.","Type":"AAAA","AliasTarget":{"HostedZoneId":"ZP97RAFLXTNZK","DNSName":"k8s-argocd-argocdse-4cbeb5c817-37482173.ap-south-1.elb.amazonaws.com.","EvaluateTargetHealth":true}}},
+    {"Action":"DELETE","ResourceRecordSet":{"Name":"cname-argocd.jp2op-project.site.","Type":"TXT","TTL":300,"ResourceRecords":[{"Value":"\"heritage=external-dns,external-dns/owner=uplatform-cluster,external-dns/resource=ingress/argocd/argocd-server\""}]}}
+  ]
+}
