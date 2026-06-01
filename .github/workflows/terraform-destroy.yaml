@@ -59,6 +59,68 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init
 
+      # -----------------------------------------------------------------------
+      # Clean up ALBs created by the AWS Load Balancer Controller.
+      # These are created by Kubernetes (ArgoCD ingress, frontend gateway),
+      # NOT by Terraform — so Terraform doesn't know to delete them.
+      # They hold ENIs in the subnets and an association with the WAF,
+      # which blocks deletion of subnets, IGW, WAF, and the ACM cert.
+      # Must run BEFORE terraform destroy.
+      # -----------------------------------------------------------------------
+      - name: Clean up K8s-created ALBs
+        run: |
+          echo "Deleting ALBs created by the ALB controller (k8s- prefix)..."
+          ARNS=$(aws elbv2 describe-load-balancers \
+            --region ${{ env.AWS_REGION }} \
+            --query "LoadBalancers[?contains(LoadBalancerName,'k8s-')].LoadBalancerArn" \
+            --output text 2>/dev/null)
+
+          for ARN in $ARNS; do
+            echo "Processing ALB: $ARN"
+
+            # Disassociate WAF first
+            aws wafv2 disassociate-web-acl \
+              --resource-arn "$ARN" \
+              --region ${{ env.AWS_REGION }} 2>/dev/null || true
+
+            # Delete listeners
+            for L in $(aws elbv2 describe-listeners \
+              --load-balancer-arn "$ARN" \
+              --query "Listeners[].ListenerArn" \
+              --output text --region ${{ env.AWS_REGION }} 2>/dev/null); do
+              aws elbv2 delete-listener --listener-arn "$L" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            done
+
+            # Delete the ALB
+            aws elbv2 delete-load-balancer \
+              --load-balancer-arn "$ARN" \
+              --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          done
+
+          # Delete target groups created by the ALB controller
+          for TG in $(aws elbv2 describe-target-groups \
+            --region ${{ env.AWS_REGION }} \
+            --query "TargetGroups[?contains(TargetGroupName,'k8s-')].TargetGroupArn" \
+            --output text 2>/dev/null); do
+            echo "Deleting target group: $TG"
+            aws elbv2 delete-target-group --target-group-arn "$TG" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          done
+
+          if [ -n "$ARNS" ]; then
+            echo "Waiting 120s for ALB ENIs to detach from subnets..."
+            sleep 120
+          fi
+
+          # Delete security groups created by the ALB controller (after ENIs detach)
+          for SG in $(aws ec2 describe-security-groups \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag-key,Values=elbv2.k8s.aws/cluster" \
+            --query "SecurityGroups[].GroupId" \
+            --output text 2>/dev/null); do
+            echo "Deleting ALB controller SG: $SG"
+            aws ec2 delete-security-group --group-id "$SG" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          done
+
       - name: Scale down EKS nodes
         run: |
           CLUSTER_STATUS=$(aws eks describe-cluster \
@@ -91,6 +153,20 @@ jobs:
             --region ${{ env.AWS_REGION }} 2>/dev/null || true
           echo "Waiting 30s for modification to apply..."
           sleep 30
+
+      # -----------------------------------------------------------------------
+      # Delete the RDS final snapshot from a previous destroy.
+      # RDS creates uplatform-mysql-final-snapshot on destroy. On the next
+      # apply, RDS cannot recreate because a snapshot with that name already
+      # exists. Deleting it here keeps destroy/recreate fully automated.
+      # -----------------------------------------------------------------------
+      - name: Delete old RDS final snapshot
+        run: |
+          echo "Deleting any existing final snapshot (blocks recreate)..."
+          aws rds delete-db-snapshot \
+            --db-snapshot-identifier uplatform-mysql-final-snapshot \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          echo "Done (ignored if not found)"
 
       - name: Empty S3 buckets
         run: |
@@ -149,6 +225,16 @@ jobs:
           fi
 
           echo "Found VPC: $VPC_ID"
+
+          # Delete orphan ENIs (left behind by ALBs/NAT/etc)
+          for ENI in $(aws ec2 describe-network-interfaces \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" \
+            --output text 2>/dev/null); do
+            echo "Deleting orphan ENI: $ENI"
+            aws ec2 delete-network-interface --network-interface-id "$ENI" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          done
 
           # Delete orphan subnets
           for SUBNET in $(aws ec2 describe-subnets \

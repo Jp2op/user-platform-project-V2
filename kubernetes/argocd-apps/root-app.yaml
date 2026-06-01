@@ -12,7 +12,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: GITHUB_REPO_URL
+    repoURL: https://github.com/Jp2op/user-platform-project-V2
     targetRevision: main
     path: kubernetes/argocd-apps
   destination:
