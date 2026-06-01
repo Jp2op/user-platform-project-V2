@@ -31,7 +31,3 @@ node_max_size       = 4
 # RDS — free tier eligible
 rds_instance_class      = "db.t3.micro"
 rds_deletion_protection = true
-
-# Fill after kubernetes bootstrap creates the ALB ingress:
-# alb_dns_name = "k8s-XXXXX.ap-south-1.elb.amazonaws.com"
-# alb_zone_id  = "ZP97RAFLXTNZK"

@@ -192,8 +192,5 @@ module "dns" {
   source       = "./modules/dns"
   project_name = var.project_name
   domain_name  = var.domain_name
-  alb_dns_name = var.alb_dns_name
-  alb_zone_id  = var.alb_zone_id
-  argocd_dns_name = var.argocd_dns_name
   tags         = local.common_tags
 }

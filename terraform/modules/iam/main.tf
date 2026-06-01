@@ -666,3 +666,62 @@ resource "aws_eks_access_policy_association" "github_prod_deploy" {
 
   depends_on = [aws_eks_access_entry.github_prod_deploy]
 }
+
+# -----------------------------------------------------------------------------
+# EXTERNAL DNS — IRSA role
+# Lets ExternalDNS create/update/delete Route53 records automatically
+# when Ingress/Gateway resources are created in the cluster.
+# -----------------------------------------------------------------------------
+
+resource "aws_iam_role" "external_dns" {
+  name = "${var.project_name}-external-dns-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = var.oidc_provider_arn
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${local.oidc_id}:aud" = "sts.amazonaws.com"
+          "${local.oidc_id}:sub" = "system:serviceaccount:kube-system:external-dns"
+        }
+      }
+    }]
+  })
+
+  tags = merge(var.tags, { Name = "${var.project_name}-external-dns-role" })
+}
+
+resource "aws_iam_policy" "external_dns" {
+  name        = "${var.project_name}-external-dns-policy"
+  description = "Allow ExternalDNS to manage Route53 records"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["route53:ChangeResourceRecordSets"]
+        Resource = ["arn:aws:route53:::hostedzone/*"]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "route53:ListHostedZones",
+          "route53:ListResourceRecordSets",
+          "route53:ListTagsForResource"
+        ]
+        Resource = ["*"]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "external_dns" {
+  role       = aws_iam_role.external_dns.name
+  policy_arn = aws_iam_policy.external_dns.arn
+}

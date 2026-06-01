@@ -27,3 +27,7 @@ output "github_prod_deploy_role_arn" {
   description = "Paste into GitHub secret AWS_ROLE_TO_ASSUME_PROD (PROD pipeline)"
   value       = aws_iam_role.github_prod_deploy.arn
 }
+
+output "external_dns_role_arn" {
+  value = aws_iam_role.external_dns.arn
+}

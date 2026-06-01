@@ -10,8 +10,10 @@ $ALB_CONTROLLER_ROLE_ARN = "arn:aws:iam::796197769514:role/uplatform-alb-control
 $ESO_QA_ROLE_ARN         = "arn:aws:iam::796197769514:role/uplatform-eso-qa-role"
 $ESO_PROD_ROLE_ARN       = "arn:aws:iam::796197769514:role/uplatform-eso-prod-role"
 $LOKI_ROLE_ARN           = "arn:aws:iam::796197769514:role/uplatform-loki-role"
-$ACM_CERT_ARN            = "arn:aws:acm:ap-south-1:796197769514:certificate/e9907b40-0aea-4ee8-8f5b-de050b17a991"
-$WAF_ACL_ARN             = "arn:aws:wafv2:ap-south-1:796197769514:regional/webacl/uplatform-waf/762ff880-ee01-490d-8200-3202146c360d"
+$ACM_CERT_ARN            = "arn:aws:acm:ap-south-1:796197769514:certificate/45b574b2-10dc-43ef-91c7-c19d8161bdb1"
+$WAF_ACL_ARN             = "arn:aws:wafv2:ap-south-1:796197769514:regional/webacl/uplatform-waf/cc2e5397-d75c-4ddc-a93e-e9940fdbca3e"
+$VPC_ID                  = "vpc-0a3350eb399ba537e"
+$EXTERNAL_DNS_ROLE_ARN = "FILL_FROM_TERRAFORM_OUTPUT"
 
 $DOCKERHUB_USERNAME = "jayyp2op"
 $DOCKERHUB_TOKEN    = "dckr_pat_VUUGhpGJRFlW52WU5BwXGOcG2n8"
@@ -107,6 +109,26 @@ helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-contro
 Write-Host '   OK ALB Controller installed (Gateway API enabled)' -ForegroundColor Green
 
 Write-Host ''
+Write-Host '>> Installing ExternalDNS...' -ForegroundColor Yellow
+helm repo add external-dns https://kubernetes-sigs.github.io/external-dns 2>&1 | Out-Null
+helm repo update external-dns 2>&1 | Out-Null
+
+helm upgrade --install external-dns external-dns/external-dns `
+    --namespace kube-system `
+    --set "provider.name=aws" `
+    --set "domainFilters[0]=$DOMAIN" `
+    --set "policy=sync" `
+    --set "txtOwnerId=$CLUSTER_NAME" `
+    --set "sources[0]=ingress" `
+    --set "sources[1]=gateway-httproute" `
+    --set "serviceAccount.create=true" `
+    --set "serviceAccount.name=external-dns" `
+    --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=$EXTERNAL_DNS_ROLE_ARN" `
+    --wait --timeout 5m
+
+Write-Host '   OK ExternalDNS installed' -ForegroundColor Green
+
+Write-Host ''
 Write-Host '>> Installing External Secrets Operator...' -ForegroundColor Yellow
 helm repo add external-secrets https://charts.external-secrets.io 2>&1 | Out-Null
 helm repo update external-secrets 2>&1 | Out-Null
@@ -145,7 +167,7 @@ Write-Host ''
 Write-Host '>> Applying root App-of-Apps...' -ForegroundColor Yellow
 $rootAppContent = Get-Content "$SCRIPT_DIR\..\argocd-apps\root-app.yaml" -Raw
 $rootAppContent = $rootAppContent -replace 'GITHUB_REPO_URL', $GITHUB_REPO
-$rootAppContent | kubectl apply -f - 2>&1 | Out-Null
+$rootAppContent | kubectl apply -f - 2>&1 | Out-String | Out-Null
 Write-Host '   OK Root app applied - ArgoCD is now in control' -ForegroundColor Green
 
 Write-Host ''
@@ -166,7 +188,6 @@ if ($password) {
 Write-Host ''
 Write-Host 'Next:' -ForegroundColor Yellow
 Write-Host '  1. Open ArgoCD UI and verify apps are syncing'
-Write-Host '  2. Get ALB DNS: kubectl get gateway -A'
-Write-Host '  3. Fill alb_dns_name in terraform/terraform.tfvars'
-Write-Host '  4. Push, then pipeline creates Route53 DNS records'
+Write-Host '  2. ExternalDNS auto-creates DNS records - no action needed'
+Write-Host '  3. Wait 2-3 min, then access https://argocd.jp2op-project.site'
 Write-Host ''

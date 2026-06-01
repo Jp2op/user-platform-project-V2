@@ -74,3 +74,7 @@ output "vpc_id" {
   description = "Needed for ALB controller bootstrap"
   value       = module.vpc.vpc_id
 }
+
+output "external_dns_role_arn" { 
+  value = module.iam.external_dns_role_arn 
+}

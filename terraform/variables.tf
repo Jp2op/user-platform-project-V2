@@ -113,22 +113,3 @@ variable "rds_deletion_protection" {
   type        = bool
   default     = true
 }
-
-# Filled after kubernetes bootstrap creates the ALB
-variable "alb_dns_name" {
-  description = "Get with: kubectl get ingress -A. Leave empty on first apply."
-  type        = string
-  default     = ""
-}
-
-variable "alb_zone_id" {
-  description = "ALB hosted zone ID. Fixed per region — ap-south-1 is ZP97RAFLXTNZK."
-  type        = string
-  default     = "ZP97RAFLXTNZK"
-}
-
-variable "argocd_dns_name" {
-  description = "ArgoCD ALB DNS name - get from kubectl get ingress -n argocd after bootstrap"
-  type        = string
-  default     = ""
-}
