@@ -1,0 +1,479 @@
+name: App QA CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - app/**
+      - charts/**
+      - .github/workflows/app-ci.yaml
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: app-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BACKEND_IMAGE: jayyp2op/uplatform-backend
+  FRONTEND_IMAGE: jayyp2op/uplatform-frontend
+  IMAGE_TAG: sha-${{ github.sha }}
+
+jobs:
+  # ===========================================================================
+  # STAGE 1 — Security Scans (parallel)
+  # ===========================================================================
+
+  gitleaks-scan:
+    name: Gitleaks Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Gitleaks
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo" \
+            zricethezav/gitleaks:latest detect \
+            --source=/repo \
+            --report-format=json \
+            --report-path=/repo/gitleaks-report.json \
+            --redact \
+            --exit-code 0
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.json
+          if-no-files-found: warn
+
+  checkov-k8s:
+    name: Checkov Kubernetes Scan
+    runs-on: ubuntu-latest
+    needs: gitleaks-scan
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Checkov
+        run: pip install checkov
+      - name: Run Checkov K8s scan
+        run: |
+          checkov -d charts/ \
+            --framework kubernetes \
+            --output json > checkov-k8s-report.json || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checkov-k8s-report
+          path: checkov-k8s-report.json
+          if-no-files-found: warn
+
+  checkov-dockerfile:
+    name: Checkov Dockerfile Scan
+    runs-on: ubuntu-latest
+    needs: gitleaks-scan
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Checkov
+        run: pip install checkov
+      - name: Run Checkov Dockerfile scan
+        run: |
+          checkov -d app/ \
+            --framework dockerfile \
+            --output json > checkov-dockerfile-report.json || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checkov-dockerfile-report
+          path: checkov-dockerfile-report.json
+          if-no-files-found: warn
+
+  client-trivy-fs:
+    name: Client Trivy FS Scan
+    runs-on: ubuntu-latest
+    needs: gitleaks-scan
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/setup-trivy@v0.2.6
+        with:
+          version: latest
+          cache: true
+
+      - name: Trivy FS scan (JSON)
+        run: |
+          trivy fs ./app/client \
+            --format json \
+            --output client-trivy-fs-report.json \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 0
+
+      - name: Trivy FS scan (TABLE)
+        run: |
+          trivy fs ./app/client \
+            --format table \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 0 > client-trivy-fs-report.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-trivy-fs-json
+          path: client-trivy-fs-report.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-trivy-fs-table
+          path: client-trivy-fs-report.txt
+          if-no-files-found: warn
+
+  server-trivy-fs:
+    name: Server Trivy FS Scan
+    runs-on: ubuntu-latest
+    needs: gitleaks-scan
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/setup-trivy@v0.2.6
+        with:
+          version: latest
+          cache: true
+
+      - name: Trivy FS scan (JSON)
+        run: |
+          trivy fs ./app/server \
+            --format json \
+            --output server-trivy-fs-report.json \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 0
+
+      - name: Trivy FS scan (TABLE)
+        run: |
+          trivy fs ./app/server \
+            --format table \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 0 > server-trivy-fs-report.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-trivy-fs-json
+          path: server-trivy-fs-report.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-trivy-fs-table
+          path: server-trivy-fs-report.txt
+          if-no-files-found: warn
+
+  # ===========================================================================
+  # STAGE 2 — Lint + Test
+  # ===========================================================================
+
+  client-lint:
+    name: Client Lint
+    runs-on: ubuntu-latest
+    needs:
+      - client-trivy-fs
+      - checkov-k8s
+      - checkov-dockerfile
+    defaults:
+      run:
+        working-directory: app/client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/client/package-lock.json
+      - run: npm ci
+      - name: Run lint
+        run: npm run lint --if-present
+        continue-on-error: true
+
+  server-lint:
+    name: Server Lint
+    runs-on: ubuntu-latest
+    needs:
+      - server-trivy-fs
+      - checkov-k8s
+      - checkov-dockerfile
+    defaults:
+      run:
+        working-directory: app/server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/server/package-lock.json
+      - run: npm ci
+      - name: Run lint
+        run: npm run lint --if-present
+        continue-on-error: true
+
+  client-test:
+    name: Client Test
+    runs-on: ubuntu-latest
+    needs: client-lint
+    defaults:
+      run:
+        working-directory: app/client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/client/package-lock.json
+      - run: npm ci
+      - name: Run tests
+        run: npm test --if-present
+        continue-on-error: true
+
+  server-test:
+    name: Server Test
+    runs-on: ubuntu-latest
+    needs: server-lint
+    defaults:
+      run:
+        working-directory: app/server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/server/package-lock.json
+      - run: npm ci
+      - name: Run tests
+        run: npm test --if-present
+        continue-on-error: true
+
+  # ===========================================================================
+  # STAGE 2.5 — SonarQube (uncomment when ready)
+  # ===========================================================================
+
+  # sonarqube:
+  #   name: SonarQube Analysis
+  #   runs-on: ubuntu-latest
+  #   needs:
+  #     - client-test
+  #     - server-test
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #
+  #     - name: SonarQube Scan
+  #       uses: sonarsource/sonarqube-scan-action@master
+  #       env:
+  #         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  #         SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+  #
+  #     - name: Quality Gate Check
+  #       id: sonarqube-quality-gate-check
+  #       continue-on-error: true
+  #       uses: sonarsource/sonarqube-quality-gate-action@master
+  #       with:
+  #         pollingTimeoutSec: 600
+  #       env:
+  #         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  #         SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+  #
+  #     - name: Show Quality Gate Status
+  #       run: echo "Quality Gate status is ${{ steps.sonarqube-quality-gate-check.outputs.quality-gate-status }}"
+
+  # ===========================================================================
+  # STAGE 3 — Client Build Verification
+  # ===========================================================================
+
+  client-build:
+    name: Client Build
+    runs-on: ubuntu-latest
+    needs: client-test
+    defaults:
+      run:
+        working-directory: app/client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/client/package-lock.json
+      - run: npm ci
+      - name: Build client
+        run: npm run build
+
+  # ===========================================================================
+  # STAGE 4 — Docker Build, Scan, Push (both images)
+  # ===========================================================================
+
+  docker:
+    name: Docker Build, Scan & Push
+    runs-on: ubuntu-latest
+    needs:
+      - client-build
+      - server-test
+      # - sonarqube  # uncomment when SonarQube is enabled
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # --- Build Both Images (local, not pushed yet) ---
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          file: ./app/Dockerfile.backend
+          load: true
+          push: false
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:${{ env.IMAGE_TAG }}
+            ${{ env.BACKEND_IMAGE }}:latest
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          file: ./app/Dockerfile.frontend
+          load: true
+          push: false
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:${{ env.IMAGE_TAG }}
+            ${{ env.FRONTEND_IMAGE }}:latest
+
+      # --- Trivy Image Scans ---
+      - uses: aquasecurity/setup-trivy@v0.2.6
+        with:
+          version: latest
+          cache: true
+
+      - name: Trivy scan backend image
+        run: |
+          trivy image ${{ env.BACKEND_IMAGE }}:${{ env.IMAGE_TAG }} \
+            --format json \
+            --output backend-image-trivy-report.json \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 0
+
+          trivy image ${{ env.BACKEND_IMAGE }}:${{ env.IMAGE_TAG }} \
+            --format table \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 0 > backend-image-trivy-report.txt
+
+      - name: Trivy scan frontend image
+        run: |
+          trivy image ${{ env.FRONTEND_IMAGE }}:${{ env.IMAGE_TAG }} \
+            --format json \
+            --output frontend-image-trivy-report.json \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 0
+
+          trivy image ${{ env.FRONTEND_IMAGE }}:${{ env.IMAGE_TAG }} \
+            --format table \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 0 > frontend-image-trivy-report.txt
+
+      - name: Upload Trivy image reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-image-reports
+          path: |
+            backend-image-trivy-report.json
+            backend-image-trivy-report.txt
+            frontend-image-trivy-report.json
+            frontend-image-trivy-report.txt
+          if-no-files-found: warn
+
+      # --- SBOM Generation ---
+      - name: Generate backend SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.BACKEND_IMAGE }}:${{ env.IMAGE_TAG }}
+          format: spdx-json
+          output-file: backend-sbom.spdx.json
+          upload-artifact: true
+
+      - name: Generate frontend SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.FRONTEND_IMAGE }}:${{ env.IMAGE_TAG }}
+          format: spdx-json
+          output-file: frontend-sbom.spdx.json
+          upload-artifact: true
+
+      # --- Push Both Images (only after scans pass) ---
+      - name: Push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          file: ./app/Dockerfile.backend
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:${{ env.IMAGE_TAG }}
+            ${{ env.BACKEND_IMAGE }}:latest
+
+      - name: Push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          file: ./app/Dockerfile.frontend
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:${{ env.IMAGE_TAG }}
+            ${{ env.FRONTEND_IMAGE }}:latest
+
+  # ===========================================================================
+  # STAGE 5 — Update QA Helm Values (ArgoCD auto-syncs)
+  # ===========================================================================
+
+  update-qa:
+    name: Update QA Image Tags
+    runs-on: ubuntu-latest
+    needs: docker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update backend values-qa.yaml
+        run: |
+          sed -i 's|tag: ".*"|tag: "${{ env.IMAGE_TAG }}"|' charts/backend/values-qa.yaml
+
+      - name: Update frontend values-qa.yaml
+        run: |
+          sed -i 's|tag: ".*"|tag: "${{ env.IMAGE_TAG }}"|' charts/frontend/values-qa.yaml
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add charts/backend/values-qa.yaml charts/frontend/values-qa.yaml
+          git diff --cached --quiet && echo "No changes to commit" || \
+            (git commit -m "ci: update QA images to ${{ env.IMAGE_TAG }} [skip ci]" && git push)
