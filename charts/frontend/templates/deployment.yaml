@@ -29,14 +29,12 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
 
+      # Pod-level security context
       securityContext:
         runAsNonRoot: true
         runAsUser: 101
-        allowPrivilegeEscalation: false
-        readOnlyRootFilesystem: true
-        capabilities:
-          drop:
-            - ALL
+        seccompProfile:
+          type: RuntimeDefault
 
       terminationGracePeriodSeconds: 15
 
@@ -60,8 +58,10 @@ spec:
               containerPort: {{ .Values.port }}
               protocol: TCP
 
+          # Container-level security context
           securityContext:
             runAsNonRoot: true
+            runAsUser: 101
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
@@ -78,7 +78,6 @@ spec:
 
           volumeMounts:
             # Override nginx.conf with K8s ConfigMap version
-            # This lets us change the backend URL per environment without rebuilding the image
             - name: nginx-config
               mountPath: /etc/nginx/conf.d/default.conf
               subPath: default.conf

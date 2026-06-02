@@ -14,8 +14,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 0        # never kill a pod before the new one is ready
-      maxSurge: 1              # create 1 new pod, wait for ready, then kill old
+      maxUnavailable: 0
+      maxSurge: 1
   template:
     metadata:
       labels:
@@ -27,15 +27,14 @@ spec:
       {{- end }}
 
       serviceAccountName: {{ include "backend.serviceAccountName" . }}
-      
+
+      # Pod-level security context — applies to all containers
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        allowPrivilegeEscalation: false
-        readOnlyRootFilesystem: true
-        capabilities:
-          drop:
-            - ALL
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
 
       # Graceful shutdown — K8s waits this long after SIGTERM before SIGKILL
       # Must be longer than server.js graceful shutdown timeout (10s)
@@ -62,14 +61,15 @@ spec:
               containerPort: {{ .Values.port }}
               protocol: TCP
 
-          # Container security context — per container restrictions
+          # Container-level security context — per container restrictions
           securityContext:
             runAsNonRoot: true
-            allowPrivilegeEscalation: false  # prevents sudo/setuid
-            readOnlyRootFilesystem: true     # container can't write to filesystem
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop:
-                - ALL                        # drop all Linux capabilities
+                - ALL
 
           # Environment variables — non-secret values set directly
           env:
