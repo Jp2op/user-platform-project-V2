@@ -6,13 +6,12 @@ metadata:
   labels:
     {{- include "backend.labels" . | nindent 4 }}
   annotations:
-    # Runs BEFORE the deployment is created
-    # ArgoCD respects Helm hooks — waits for this to complete before deploying the app
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   backoffLimit: 5
-  activeDeadlineSeconds: 120
+  activeDeadlineSeconds: 180
   template:
     metadata:
       labels:
@@ -47,6 +46,18 @@ spec:
             - /bin/sh
             - -c
             - |
+              echo "Waiting for root secret to be available..."
+              RETRIES=0
+              until [ -n "$MYSQL_ROOT_PASSWORD" ] && [ "$MYSQL_ROOT_PASSWORD" != "" ]; do
+                RETRIES=$((RETRIES+1))
+                if [ $RETRIES -gt 30 ]; then
+                  echo "ERROR: Root secret not available after 30 retries"
+                  exit 1
+                fi
+                echo "Secret not ready, retry $RETRIES/30..."
+                sleep 5
+              done
+
               echo "Waiting for MySQL to be reachable..."
               until mysql -h "$MYSQL_HOST" -u root -p"$MYSQL_ROOT_PASSWORD" -e "SELECT 1" 2>/dev/null; do
                 echo "MySQL not ready, retrying in 5s..."
