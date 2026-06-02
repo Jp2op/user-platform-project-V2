@@ -27,13 +27,15 @@ spec:
       {{- end }}
 
       serviceAccountName: {{ include "backend.serviceAccountName" . }}
-
-      # Pod security context — applies to all containers in the pod
+      
       securityContext:
-        runAsNonRoot: true           # reject if image tries to run as root
-        fsGroup: 1000                # group ownership for mounted volumes
-        seccompProfile:
-          type: RuntimeDefault       # use container runtime's default seccomp profile
+        runAsNonRoot: true
+        runAsUser: 1000
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
 
       # Graceful shutdown — K8s waits this long after SIGTERM before SIGKILL
       # Must be longer than server.js graceful shutdown timeout (10s)

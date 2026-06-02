@@ -31,8 +31,12 @@ spec:
 
       securityContext:
         runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
+        runAsUser: 101
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
 
       terminationGracePeriodSeconds: 15
 
