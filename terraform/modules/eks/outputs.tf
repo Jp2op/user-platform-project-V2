@@ -33,3 +33,8 @@ output "node_role_name" {
   description = "Used by monitoring module to attach Loki S3 policy to nodes"
   value       = aws_iam_role.nodes.name
 }
+
+output "cluster_security_group_id" {
+  description = "EKS-managed cluster SG - this is what pods actually use"
+  value       = aws_eks_cluster.main.vpc_config[0].cluster_security_group_id
+}

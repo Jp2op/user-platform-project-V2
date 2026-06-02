@@ -63,3 +63,8 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "eks_cluster_security_group_id" {
+  description = "EKS-managed cluster SG - pods use this SG, must be allowed to connect"
+  type        = string
+}

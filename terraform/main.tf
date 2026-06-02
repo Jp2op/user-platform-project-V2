@@ -129,6 +129,7 @@ module "rds" {
 
   isolated_subnet_ids        = module.vpc.isolated_subnet_ids
   eks_node_security_group_id = module.eks.node_security_group_id
+  eks_cluster_security_group_id = module.eks.cluster_security_group_id
 
   kms_key_arn         = module.kms.rds_key_arn
   secrets_kms_key_arn = module.kms.secrets_key_arn

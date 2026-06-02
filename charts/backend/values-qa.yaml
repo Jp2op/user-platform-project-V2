@@ -25,3 +25,7 @@ externalSecret:
 
 eso:
   serviceAccountName: "eso-qa-sa"
+
+dbInit:
+  enabled: true
+  rootSecretName: "uplatform/rds/root"

@@ -10,9 +10,9 @@ $ALB_CONTROLLER_ROLE_ARN = "arn:aws:iam::796197769514:role/uplatform-alb-control
 $ESO_QA_ROLE_ARN         = "arn:aws:iam::796197769514:role/uplatform-eso-qa-role"
 $ESO_PROD_ROLE_ARN       = "arn:aws:iam::796197769514:role/uplatform-eso-prod-role"
 $LOKI_ROLE_ARN           = "arn:aws:iam::796197769514:role/uplatform-loki-role"
-$ACM_CERT_ARN          = "arn:aws:acm:ap-south-1:796197769514:certificate/588587d4-8b32-43f8-98dd-e4fc9d4e9118"
-$WAF_ACL_ARN           = "arn:aws:wafv2:ap-south-1:796197769514:regional/webacl/uplatform-waf/a773c551-0301-4445-aa9a-e3da000d5846"
-$VPC_ID                = "vpc-0b07836faa06d431b"
+$ACM_CERT_ARN          = "arn:aws:acm:ap-south-1:796197769514:certificate/5b525c9f-0be5-4419-a6be-18400a9358d8"
+$WAF_ACL_ARN           = "arn:aws:wafv2:ap-south-1:796197769514:regional/webacl/uplatform-waf/cd161612-4c40-49b7-86e5-64638dc18df0"
+$VPC_ID                = "vpc-05dbb45f0df6e0324"
 $EXTERNAL_DNS_ROLE_ARN = "arn:aws:iam::796197769514:role/uplatform-external-dns-role"
 
 $DOCKERHUB_USERNAME = "jayyp2op"

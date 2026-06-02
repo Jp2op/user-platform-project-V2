@@ -44,11 +44,11 @@ resource "aws_security_group" "rds" {
   vpc_id      = var.vpc_id
 
   ingress {
-    description     = "MySQL from EKS nodes"
+    description     = "MySQL from EKS pods and nodes"
     from_port       = 3306
     to_port         = 3306
     protocol        = "tcp"
-    security_groups = [var.eks_node_security_group_id]
+    security_groups = [var.eks_node_security_group_id, var.eks_cluster_security_group_id]
   }
 
   # No egress rule — RDS doesn't need to initiate outbound connections
