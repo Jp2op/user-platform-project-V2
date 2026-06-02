@@ -3,7 +3,7 @@
 replicaCount: 1
 
 image:
-  tag: "latest"
+  tag: "sha-51e271cbd7117c8a9b9de228e5510bf2a7816d8e"
 
 autoscaling:
   enabled: true
