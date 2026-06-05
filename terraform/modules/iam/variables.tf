@@ -30,6 +30,11 @@ variable "prod_secret_arn" {
   type        = string
 }
 
+variable "root_secret_arn" {
+  description = "RDS root secret ARN - both QA and PROD ESO roles need this for db-init"
+  type        = string
+}
+
 variable "secrets_kms_key_arn" {
   description = "KMS key used to encrypt secrets — ESO needs decrypt permission"
   type        = string

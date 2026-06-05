@@ -160,6 +160,7 @@ module "iam" {
 
   qa_secret_arn   = module.rds.qa_secret_arn
   prod_secret_arn = module.rds.prod_secret_arn
+  root_secret_arn = module.rds.root_secret_arn
 
   secrets_kms_key_arn = module.kms.secrets_key_arn
   loki_bucket_arn     = module.s3.loki_bucket_arn

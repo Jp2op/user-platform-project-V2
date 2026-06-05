@@ -32,3 +32,8 @@ output "prod_secret_name" {
 output "rds_security_group_id" {
   value = aws_security_group.rds.id
 }
+
+output "root_secret_arn" {
+  description = "Secrets Manager ARN for RDS root - needed by ESO for db-init job"
+  value       = aws_secretsmanager_secret.root.arn
+}

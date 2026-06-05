@@ -78,7 +78,7 @@ resource "aws_iam_policy" "eso_qa" {
           "secretsmanager:DescribeSecret"
         ]
         # Scoped to ONLY the QA secret — cannot read prod secret
-        Resource = var.qa_secret_arn
+        Resource = [var.qa_secret_arn, var.root_secret_arn]
       },
       {
         # ESO needs KMS to decrypt the secret value
@@ -135,7 +135,7 @@ resource "aws_iam_policy" "eso_prod" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
-        Resource = var.prod_secret_arn
+        Resource = [var.prod_secret_arn, var.root_secret_arn]
       },
       {
         Effect = "Allow"
