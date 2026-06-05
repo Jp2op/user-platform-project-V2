@@ -78,23 +78,23 @@ spec:
             - name: MYSQL_HOST
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.secretRef }}
-                  key: DB_HOST
+                  name: {{ .Values.dbInit.rootSecretRef }}
+                  key: host
             - name: DB_NAME
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.secretRef }}
-                  key: DB_NAME
+                  name: {{ .Values.dbInit.rootSecretRef }}
+                  key: db_name
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.secretRef }}
-                  key: DB_USER
+                  name: {{ .Values.dbInit.rootSecretRef }}
+                  key: db_user
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.secretRef }}
-                  key: DB_PASSWORD
+                  name: {{ .Values.dbInit.rootSecretRef }}
+                  key: db_password
             - name: MYSQL_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
