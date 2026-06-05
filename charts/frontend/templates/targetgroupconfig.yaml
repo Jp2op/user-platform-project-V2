@@ -8,18 +8,4 @@ metadata:
     {{- include "frontend.labels" . | nindent 4 }}
 spec:
   targetType: ip
-  defaultConfiguration:
-    protocolVersion: HTTP1
-    healthCheck:
-      path: /
-      port: {{ .Values.port | quote }}
-      protocol: HTTP
-      successCodes: "200,301,302"
-      intervalSeconds: 15
-      timeoutSeconds: 5
-      healthyThresholdCount: 2
-      unhealthyThresholdCount: 2
-  targetGroupBindingSelector:
-    matchLabels:
-      gateway.networking.k8s.io/gateway-name: {{ include "frontend.fullname" . }}
 {{- end }}
