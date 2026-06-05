@@ -19,6 +19,6 @@ autoscaling:
   maxReplicas: 5
 
 gateway:
-  certificateArn: "arn:aws:acm:ap-south-1:796197769514:certificate/5b525c9f-0be5-4419-a6be-18400a9358d8"
-  wafAclArn: "arn:aws:wafv2:ap-south-1:796197769514:regional/webacl/uplatform-waf/cd161612-4c40-49b7-86e5-64638dc18df0"
+  certificateArn: "arn:aws:acm:ap-south-1:796197769514:certificate/ecdb468c-53a6-447c-a9e7-30a35a9e8823"
+  wafAclArn: "arn:aws:wafv2:ap-south-1:796197769514:regional/webacl/uplatform-waf/ca9f4d3d-cc20-470e-891b-da07f624544c"
   host: jp2op-project.site
