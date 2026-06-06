@@ -15,7 +15,7 @@ port: 8080  # nginx-unprivileged listens on 8080
 
 # Backend service — used by nginx proxy_pass (docker-compose fallback)
 # and by HTTPRoute to route /api/* at the Gateway level
-backendServiceName: backend
+backendServiceName: backend-backend
 backendServicePort: 5000
 
 service:

@@ -24,7 +24,7 @@ spec:
             type: PathPrefix
             value: /api
       backendRefs:
-        - name: backend
+        - name: {{ .Values.backendServiceName }}
           port: {{ .Values.backendServicePort }}
 
     # Rule 2: everything else → frontend service
