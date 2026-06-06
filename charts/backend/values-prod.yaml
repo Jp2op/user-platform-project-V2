@@ -3,7 +3,7 @@
 replicaCount: 2
 
 image:
-  tag: "prod-latest"  # updated by CD pipeline on merge to main
+  tag: "prod-5ac7b67a288921df4da6cf27fa448a9e3e81ac95"  # updated by CD pipeline on merge to main
 
 resources:
   requests:
