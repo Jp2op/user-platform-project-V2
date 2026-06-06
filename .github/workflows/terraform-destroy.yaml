@@ -112,13 +112,52 @@ jobs:
           fi
 
           # Delete security groups created by the ALB controller (after ENIs detach)
-          for SG in $(aws ec2 describe-security-groups \
-            --region ${{ env.AWS_REGION }} \
-            --filters "Name=tag-key,Values=elbv2.k8s.aws/cluster" \
-            --query "SecurityGroups[].GroupId" \
-            --output text 2>/dev/null); do
-            echo "Deleting ALB controller SG: $SG"
-            aws ec2 delete-security-group --group-id "$SG" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          for ATTEMPT in 1 2 3 4 5; do
+            SG_LIST=$(aws ec2 describe-security-groups \
+              --region ${{ env.AWS_REGION }} \
+              --filters "Name=tag-key,Values=elbv2.k8s.aws/cluster" \
+              --query "SecurityGroups[].GroupId" \
+              --output text 2>/dev/null)
+
+            if [ -z "$SG_LIST" ] || [ "$SG_LIST" == "None" ]; then
+              echo "All ALB controller SGs deleted"
+              break
+            fi
+
+            echo "Attempt $ATTEMPT: cleaning ALB controller SGs..."
+
+            # First revoke all ingress/egress rules (cross-references block deletion)
+            for SG in $SG_LIST; do
+              echo "Revoking rules for SG: $SG"
+              INGRESS=$(aws ec2 describe-security-groups --group-ids "$SG" \
+                --query "SecurityGroups[0].IpPermissions" --output json \
+                --region ${{ env.AWS_REGION }} 2>/dev/null)
+              if [ "$INGRESS" != "[]" ] && [ -n "$INGRESS" ]; then
+                aws ec2 revoke-security-group-ingress --group-id "$SG" \
+                  --ip-permissions "$INGRESS" \
+                  --region ${{ env.AWS_REGION }} 2>/dev/null || true
+              fi
+
+              EGRESS=$(aws ec2 describe-security-groups --group-ids "$SG" \
+                --query "SecurityGroups[0].IpPermissionsEgress" --output json \
+                --region ${{ env.AWS_REGION }} 2>/dev/null)
+              if [ "$EGRESS" != "[]" ] && [ -n "$EGRESS" ]; then
+                aws ec2 revoke-security-group-egress --group-id "$SG" \
+                  --ip-permissions "$EGRESS" \
+                  --region ${{ env.AWS_REGION }} 2>/dev/null || true
+              fi
+            done
+
+            # Then delete the SGs
+            for SG in $SG_LIST; do
+              echo "Deleting ALB controller SG: $SG"
+              aws ec2 delete-security-group --group-id "$SG" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            done
+
+            if [ "$ATTEMPT" -lt 5 ]; then
+              echo "Waiting 30s before retry..."
+              sleep 30
+            fi
           done
 
       - name: Scale down EKS nodes
@@ -307,3 +346,28 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform destroy -auto-approve -input=false 2>&1
         timeout-minutes: 60
+
+      - name: Final SG cleanup (post-destroy fallback)
+        if: always()
+        run: |
+          echo "Checking for leftover ALB controller SGs..."
+          for SG in $(aws ec2 describe-security-groups \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag-key,Values=elbv2.k8s.aws/cluster" \
+            --query "SecurityGroups[].GroupId" \
+            --output text 2>/dev/null); do
+
+            echo "Revoking rules for leftover SG: $SG"
+            INGRESS=$(aws ec2 describe-security-groups --group-ids "$SG" \
+              --query "SecurityGroups[0].IpPermissions" --output json \
+              --region ${{ env.AWS_REGION }} 2>/dev/null)
+            if [ "$INGRESS" != "[]" ] && [ -n "$INGRESS" ]; then
+              aws ec2 revoke-security-group-ingress --group-id "$SG" \
+                --ip-permissions "$INGRESS" \
+                --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            fi
+
+            echo "Deleting leftover SG: $SG"
+            aws ec2 delete-security-group --group-id "$SG" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          done
+          echo "Final cleanup done"
