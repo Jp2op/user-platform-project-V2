@@ -1,0 +1,139 @@
+# -----------------------------------------------------------------------------
+# PRODUCTION CD PIPELINE
+#
+# Triggers: manual only (workflow_dispatch)
+#
+# Flow:
+#   1. Pull QA-tested images (latest tag)
+#   2. Retag as prod-sha-xxxxx
+#   3. Push to DockerHub
+#   4. Update Helm values-prod.yaml with new image tag
+#   5. Commit + push [skip ci]
+#   6. ArgoCD detects change, shows OutOfSync
+#   7. You click Sync in ArgoCD UI (manual gate)
+#
+# Gates before anything touches prod:
+#   Gate 1: Manual trigger (you click "Run workflow")
+#   Gate 2: GitHub environment approval (reviewer must approve)
+#   Gate 3: ArgoCD manual sync (you click Sync in ArgoCD UI)
+#
+# Required GitHub secrets:
+#   - DOCKERHUB_TOKEN
+# Required GitHub variables:
+#   - DOCKERHUB_USERNAME (jayyp2op)
+#
+# Required GitHub environment:
+#   - production (with required reviewers enabled)
+# -----------------------------------------------------------------------------
+
+name: Production CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type DEPLOY to confirm production deployment"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: prod-cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  BACKEND_IMAGE: jayyp2op/uplatform-backend
+  FRONTEND_IMAGE: jayyp2op/uplatform-frontend
+  PROD_TAG: prod-${{ github.sha }}
+
+jobs:
+  # ===========================================================================
+  # Validate
+  # ===========================================================================
+
+  validate:
+    name: Validate Confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "DEPLOY" ]; then
+            echo "You must type DEPLOY exactly to confirm"
+            exit 1
+          fi
+
+  # ===========================================================================
+  # Retag QA images for production
+  # ===========================================================================
+
+  promote-images:
+    name: Promote Images to Prod
+    runs-on: ubuntu-latest
+    needs: validate
+    environment: production  # <-- GitHub pauses here for reviewer approval
+
+    steps:
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull and retag backend
+        run: |
+          docker pull ${{ env.BACKEND_IMAGE }}:latest
+          docker tag ${{ env.BACKEND_IMAGE }}:latest ${{ env.BACKEND_IMAGE }}:${{ env.PROD_TAG }}
+          docker push ${{ env.BACKEND_IMAGE }}:${{ env.PROD_TAG }}
+
+      - name: Pull and retag frontend
+        run: |
+          docker pull ${{ env.FRONTEND_IMAGE }}:latest
+          docker tag ${{ env.FRONTEND_IMAGE }}:latest ${{ env.FRONTEND_IMAGE }}:${{ env.PROD_TAG }}
+          docker push ${{ env.FRONTEND_IMAGE }}:${{ env.PROD_TAG }}
+
+  # ===========================================================================
+  # Update prod Helm values (ArgoCD shows OutOfSync, you click Sync)
+  # ===========================================================================
+
+  update-prod:
+    name: Update Prod Image Tags
+    runs-on: ubuntu-latest
+    needs: promote-images
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update backend values-prod.yaml
+        run: |
+          sed -i 's|tag: ".*"|tag: "${{ env.PROD_TAG }}"|' charts/backend/values-prod.yaml
+
+      - name: Update frontend values-prod.yaml
+        run: |
+          sed -i 's|tag: ".*"|tag: "${{ env.PROD_TAG }}"|' charts/frontend/values-prod.yaml
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add charts/backend/values-prod.yaml charts/frontend/values-prod.yaml
+          git diff --cached --quiet && echo "No changes to commit" || \
+            (git commit -m "cd: promote to prod ${{ env.PROD_TAG }} [skip ci]" && git push)
+
+      - name: Summary
+        run: |
+          echo "============================================="
+          echo "  Production images updated"
+          echo "============================================="
+          echo ""
+          echo "Backend:  ${{ env.BACKEND_IMAGE }}:${{ env.PROD_TAG }}"
+          echo "Frontend: ${{ env.FRONTEND_IMAGE }}:${{ env.PROD_TAG }}"
+          echo ""
+          echo "ArgoCD will show prod apps as OutOfSync."
+          echo "Open ArgoCD UI and click Sync to deploy."
+          echo "============================================="
