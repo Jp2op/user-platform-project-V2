@@ -127,3 +127,9 @@ dbInit:
   enabled: true
   rootSecretRef: "rds-root-secret"
   rootSecretName: ""  # e.g. uplatform/rds/root — set per env
+
+gateway:
+  enabled: true
+  healthCheck:
+    path: /api/health
+    successCodes: "200"

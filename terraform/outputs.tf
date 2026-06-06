@@ -78,3 +78,8 @@ output "vpc_id" {
 output "external_dns_role_arn" { 
   value = module.iam.external_dns_role_arn 
 }
+
+output "public_subnet_ids" {
+  description = "Public subnet IDs for ALB - populate in frontend values files"
+  value       = module.vpc.public_subnet_ids
+}

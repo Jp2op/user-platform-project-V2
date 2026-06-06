@@ -1,25 +1,34 @@
 $ErrorActionPreference = "Stop"
 
+# -----------------------------------------------------------------------------
+# CONFIGURATION — fill these from terraform output after each apply
+# Role ARNs are stable across destroy/recreate. Cert, WAF, VPC change.
+# -----------------------------------------------------------------------------
+
 $AWS_REGION          = "ap-south-1"
 $CLUSTER_NAME        = "uplatform-cluster"
 $DOMAIN              = "jp2op-project.site"
 $GITHUB_REPO         = "https://github.com/Jp2op/user-platform-project-V2"
-$VPC_ID = "vpc-0a3350eb399ba537e"
 
+# From terraform output (role ARNs are stable, don't change per recreate)
 $ALB_CONTROLLER_ROLE_ARN = "arn:aws:iam::796197769514:role/uplatform-alb-controller-role"
 $ESO_QA_ROLE_ARN         = "arn:aws:iam::796197769514:role/uplatform-eso-qa-role"
 $ESO_PROD_ROLE_ARN       = "arn:aws:iam::796197769514:role/uplatform-eso-prod-role"
 $LOKI_ROLE_ARN           = "arn:aws:iam::796197769514:role/uplatform-loki-role"
-$ACM_CERT_ARN          = "arn:aws:acm:ap-south-1:796197769514:certificate/ecdb468c-53a6-447c-a9e7-30a35a9e8823"
-$WAF_ACL_ARN           = "arn:aws:wafv2:ap-south-1:796197769514:regional/webacl/uplatform-waf/ca9f4d3d-cc20-470e-891b-da07f624544c"
-$VPC_ID                = "vpc-0b3eae8e399720af3"
-$EXTERNAL_DNS_ROLE_ARN = "arn:aws:iam::796197769514:role/uplatform-external-dns-role"
+$EXTERNAL_DNS_ROLE_ARN   = "arn:aws:iam::796197769514:role/uplatform-external-dns-role"
 
+# From terraform output (these CHANGE on every destroy/recreate)
+$ACM_CERT_ARN = "arn:aws:acm:ap-south-1:796197769514:certificate/ecdb468c-53a6-447c-a9e7-30a35a9e8823"
+$WAF_ACL_ARN  = "arn:aws:wafv2:ap-south-1:796197769514:regional/webacl/uplatform-waf/ca9f4d3d-cc20-470e-891b-da07f624544c"
+$VPC_ID       = "vpc-0b3eae8e399720af3"
+
+# DockerHub credentials
 $DOCKERHUB_USERNAME = "jayyp2op"
-$DOCKERHUB_TOKEN    = "dckr_pat_VUUGhpGJRFlW52WU5BwXGOcG2n8"
+$DOCKERHUB_TOKEN    = "YOUR_DOCKERHUB_TOKEN"
 
+# Component versions
 $ARGOCD_VERSION         = "7.3.4"
-$ALB_CONTROLLER_VERSION = "1.8.1"
+$ALB_CONTROLLER_VERSION = "3.4.0"
 $ESO_VERSION            = "0.9.19"
 $GATEWAY_API_VERSION    = "v1.2.1"
 
@@ -31,6 +40,7 @@ Write-Host '  Kubernetes Bootstrap' -ForegroundColor Cyan
 Write-Host '==================================================' -ForegroundColor Cyan
 Write-Host ''
 
+# ─── Cluster connectivity ────────────────────────────────────────────────────
 Write-Host '>> Verifying cluster connectivity...' -ForegroundColor Yellow
 try {
     kubectl cluster-info --request-timeout=10s 2>&1 | Out-Null
@@ -41,6 +51,7 @@ try {
     exit 1
 }
 
+# ─── Namespaces ──────────────────────────────────────────────────────────────
 Write-Host ''
 Write-Host '>> Creating namespaces...' -ForegroundColor Yellow
 foreach ($NS in @('argocd', 'qa', 'prod', 'monitoring', 'external-secrets')) {
@@ -50,6 +61,7 @@ kubectl label namespace qa   environment=qa   --overwrite 2>&1 | Out-Null
 kubectl label namespace prod environment=prod --overwrite 2>&1 | Out-Null
 Write-Host '   OK Namespaces ready' -ForegroundColor Green
 
+# ─── DockerHub pull secrets ──────────────────────────────────────────────────
 Write-Host ''
 Write-Host '>> Creating DockerHub pull secrets...' -ForegroundColor Yellow
 foreach ($NS in @('qa', 'prod')) {
@@ -62,6 +74,7 @@ foreach ($NS in @('qa', 'prod')) {
 }
 Write-Host '   OK Pull secrets created' -ForegroundColor Green
 
+# ─── IRSA service accounts ──────────────────────────────────────────────────
 Write-Host ''
 Write-Host '>> Creating IRSA service accounts...' -ForegroundColor Yellow
 
@@ -85,13 +98,18 @@ kubectl annotate serviceaccount loki `
 
 Write-Host '   OK IRSA service accounts ready' -ForegroundColor Green
 
+# ─── Gateway API CRDs ────────────────────────────────────────────────────────
 Write-Host ''
 Write-Host '>> Installing Gateway API CRDs...' -ForegroundColor Yellow
-kubectl apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$GATEWAY_API_VERSION/standard-install.yaml" 2>&1 | Out-Null
+
+# Standard Gateway API CRDs (GatewayClass, Gateway, HTTPRoute, etc.)
+kubectl apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/$GATEWAY_API_VERSION/experimental-install.yaml" 2>&1 | Out-Null
+
 Write-Host '   OK Gateway API CRDs installed' -ForegroundColor Green
 
+# ─── AWS Load Balancer Controller ────────────────────────────────────────────
 Write-Host ''
-Write-Host '>> Installing AWS Load Balancer Controller...' -ForegroundColor Yellow
+Write-Host '>> Installing AWS Load Balancer Controller v3.4.0...' -ForegroundColor Yellow
 helm repo add eks https://aws.github.io/eks-charts 2>&1 | Out-Null
 helm repo update eks 2>&1 | Out-Null
 
@@ -106,8 +124,20 @@ helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-contro
     --set "vpcId=$VPC_ID" `
     --wait --timeout 5m
 
+# v3.x bundles AWS-specific Gateway CRDs (TargetGroupConfiguration,
+# LoadBalancerConfiguration, ListenerRuleConfiguration) but Helm doesn't
+# update CRDs on upgrade. Apply them explicitly via --include-crds.
+Write-Host '>> Installing AWS Gateway API CRDs (TargetGroupConfiguration, etc.)...' -ForegroundColor Yellow
+helm template aws-lb-crds eks/aws-load-balancer-controller `
+    --version "$ALB_CONTROLLER_VERSION" `
+    --set "enableGatewayAPI=true" `
+    --set "clusterName=$CLUSTER_NAME" `
+    --include-crds `
+    | kubectl apply --server-side --force-conflicts -f - 2>&1 | Out-Null
+
 Write-Host '   OK ALB Controller installed (Gateway API enabled)' -ForegroundColor Green
 
+# ─── ExternalDNS ─────────────────────────────────────────────────────────────
 Write-Host ''
 Write-Host '>> Installing ExternalDNS...' -ForegroundColor Yellow
 helm repo add external-dns https://kubernetes-sigs.github.io/external-dns 2>&1 | Out-Null
@@ -128,6 +158,7 @@ helm upgrade --install external-dns external-dns/external-dns `
 
 Write-Host '   OK ExternalDNS installed' -ForegroundColor Green
 
+# ─── External Secrets Operator ───────────────────────────────────────────────
 Write-Host ''
 Write-Host '>> Installing External Secrets Operator...' -ForegroundColor Yellow
 helm repo add external-secrets https://charts.external-secrets.io 2>&1 | Out-Null
@@ -141,12 +172,14 @@ helm upgrade --install external-secrets external-secrets/external-secrets `
 
 Write-Host '   OK ESO installed' -ForegroundColor Green
 
+# ─── StorageClass + GatewayClass ─────────────────────────────────────────────
 Write-Host ''
 Write-Host '>> Applying StorageClass and GatewayClass...' -ForegroundColor Yellow
 kubectl apply -f "$SCRIPT_DIR\storageclass.yaml"
 kubectl apply -f "$SCRIPT_DIR\gatewayclass.yaml"
 Write-Host '   OK StorageClass + GatewayClass created' -ForegroundColor Green
 
+# ─── ArgoCD ──────────────────────────────────────────────────────────────────
 Write-Host ''
 Write-Host '>> Installing ArgoCD...' -ForegroundColor Yellow
 helm repo add argo https://argoproj.github.io/argo-helm 2>&1 | Out-Null
@@ -163,6 +196,7 @@ helm upgrade --install argocd argo/argo-cd `
 
 Write-Host '   OK ArgoCD installed' -ForegroundColor Green
 
+# ─── Root App-of-Apps ────────────────────────────────────────────────────────
 Write-Host ''
 Write-Host '>> Applying root App-of-Apps...' -ForegroundColor Yellow
 $rootAppContent = Get-Content "$SCRIPT_DIR\..\argocd-apps\root-app.yaml" -Raw
@@ -170,6 +204,7 @@ $rootAppContent = $rootAppContent -replace 'GITHUB_REPO_URL', $GITHUB_REPO
 $rootAppContent | kubectl apply -f - 2>&1 | Out-String | Out-Null
 Write-Host '   OK Root app applied - ArgoCD is now in control' -ForegroundColor Green
 
+# ─── Done ────────────────────────────────────────────────────────────────────
 Write-Host ''
 Write-Host '==================================================' -ForegroundColor Cyan
 Write-Host '  Bootstrap complete' -ForegroundColor Cyan
@@ -189,5 +224,5 @@ Write-Host ''
 Write-Host 'Next:' -ForegroundColor Yellow
 Write-Host '  1. Open ArgoCD UI and verify apps are syncing'
 Write-Host '  2. ExternalDNS auto-creates DNS records - no action needed'
-Write-Host '  3. Wait 2-3 min, then access https://argocd.jp2op-project.site'
+Write-Host "  3. Wait 2-3 min, then access $argoUrl"
 Write-Host ''

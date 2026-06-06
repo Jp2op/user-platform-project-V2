@@ -1,4 +1,7 @@
 {{- if .Values.gateway.enabled }}
+# TargetGroupConfiguration tells the ALB controller to use IP targets
+# (direct pod IPs) instead of Instance targets (NodePort). This allows
+# ClusterIP services to work with Gateway API.
 apiVersion: gateway.k8s.aws/v1beta1
 kind: TargetGroupConfiguration
 metadata:
@@ -7,5 +10,21 @@ metadata:
   labels:
     {{- include "frontend.labels" . | nindent 4 }}
 spec:
-  targetType: ip
+  # Attach this TGC to the frontend ClusterIP service
+  targetReference:
+    kind: Service
+    name: {{ include "frontend.fullname" . }}
+
+  defaultConfiguration:
+    # IP mode: ALB targets pod IPs directly (no NodePort needed)
+    targetType: ip
+    protocolVersion: HTTP1
+
+    {{- if .Values.gateway.healthCheck }}
+    healthCheckConfig:
+      healthCheckPath: {{ .Values.gateway.healthCheck.path | quote }}
+      healthCheckProtocol: HTTP
+      matcher:
+        httpCode: {{ .Values.gateway.healthCheck.successCodes | quote }}
+    {{- end }}
 {{- end }}

@@ -1,0 +1,26 @@
+{{- if .Values.gateway.enabled }}
+# Backend TargetGroupConfiguration — IP targets + /api/health
+# Backend app only responds to /api/health, not / — so we override
+# the default ALB health check path.
+apiVersion: gateway.k8s.aws/v1beta1
+kind: TargetGroupConfiguration
+metadata:
+  name: {{ include "backend.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "backend.labels" . | nindent 4 }}
+spec:
+  targetReference:
+    kind: Service
+    name: {{ include "backend.fullname" . }}
+
+  defaultConfiguration:
+    targetType: ip
+    protocolVersion: HTTP1
+
+    healthCheckConfig:
+      healthCheckPath: {{ .Values.gateway.healthCheck.path | quote }}
+      healthCheckProtocol: HTTP
+      matcher:
+        httpCode: {{ .Values.gateway.healthCheck.successCodes | quote }}
+{{- end }}

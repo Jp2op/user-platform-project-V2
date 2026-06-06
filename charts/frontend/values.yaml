@@ -1,3 +1,6 @@
+# Default values for the frontend chart.
+# Overridden by values-qa.yaml and values-prod.yaml.
+
 replicaCount: 1
 
 image:
@@ -21,13 +24,22 @@ service:
   targetPort: 8080
 
 # Gateway API — replaces Ingress
-# Creates an ALB with HTTPS + WAF via Gateway + HTTPRoute
+# Creates a public ALB with HTTPS + WAF via Gateway + HTTPRoute + LB Config
 gateway:
   enabled: true
   scheme: internet-facing
   certificateArn: ""   # set per env from terraform output
   wafAclArn: ""        # set per env from terraform output
   host: ""             # set per env (e.g. qa.jp2op-project.site)
+
+  # Public subnets for the ALB. Must be set per env.
+  # Without this, the controller picks internal subnets by default.
+  publicSubnets: []
+
+  # Health check for the ALB target group (frontend serves at /)
+  healthCheck:
+    path: /
+    successCodes: "200,301,302"
 
 livenessProbe:
   httpGet:
@@ -58,8 +70,9 @@ resources:
 autoscaling:
   enabled: true
   minReplicas: 1
-  maxReplicas: 5
+  maxReplicas: 3
   targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
 
 podDisruptionBudget:
   enabled: true

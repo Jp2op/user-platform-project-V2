@@ -1,0 +1,21 @@
+{{- if .Values.gateway.enabled }}
+# LoadBalancerConfiguration controls ALB-level settings: scheme,
+# subnets, etc. Without this, ALB controller picks internal subnets
+# by default. We force internet-facing with public subnets here.
+apiVersion: gateway.k8s.aws/v1beta1
+kind: LoadBalancerConfiguration
+metadata:
+  name: {{ include "frontend.fullname" . }}-lb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "frontend.labels" . | nindent 4 }}
+spec:
+  scheme: {{ .Values.gateway.scheme }}
+
+  {{- if .Values.gateway.publicSubnets }}
+  loadBalancerSubnets:
+    {{- range .Values.gateway.publicSubnets }}
+    - identifier: {{ . }}
+    {{- end }}
+  {{- end }}
+{{- end }}

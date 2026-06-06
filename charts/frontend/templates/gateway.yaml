@@ -6,7 +6,6 @@ metadata:
   labels:
     {{- include "frontend.labels" . | nindent 4 }}
   annotations:
-    alb.ingress.kubernetes.io/scheme: {{ .Values.gateway.scheme }}
     {{- if .Values.gateway.certificateArn }}
     alb.ingress.kubernetes.io/certificate-arn: {{ .Values.gateway.certificateArn | quote }}
     {{- end }}
@@ -15,6 +14,14 @@ metadata:
     {{- end }}
 spec:
   gatewayClassName: alb
+
+  # Reference LoadBalancerConfiguration so the ALB is internet-facing
+  # and uses our public subnets instead of internal ones.
+  infrastructure:
+    parametersRef:
+      group: gateway.k8s.aws
+      kind: LoadBalancerConfiguration
+      name: {{ include "frontend.fullname" . }}-lb
 
   listeners:
     - name: https
