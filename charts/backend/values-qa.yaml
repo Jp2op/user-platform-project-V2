@@ -4,7 +4,7 @@
 replicaCount: 1
 
 image:
-  tag: "sha-09a441dd71df79bb1d8374c7bb49abb6777f0644"  # updated by CI pipeline on every push to qa branch
+  tag: "sha-76a813506feaaa2f9c7cd1186e7b9a79a89e75bf"  # updated by CI pipeline on every push to qa branch
 
 resources:
   requests:
