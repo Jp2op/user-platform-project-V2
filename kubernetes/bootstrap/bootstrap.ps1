@@ -18,13 +18,13 @@ $LOKI_ROLE_ARN           = "arn:aws:iam::796197769514:role/uplatform-loki-role"
 $EXTERNAL_DNS_ROLE_ARN   = "arn:aws:iam::796197769514:role/uplatform-external-dns-role"
 
 # From terraform output (these CHANGE on every destroy/recreate)
-$ACM_CERT_ARN = "arn:aws:acm:ap-south-1:796197769514:certificate/ecdb468c-53a6-447c-a9e7-30a35a9e8823"
-$WAF_ACL_ARN  = "arn:aws:wafv2:ap-south-1:796197769514:regional/webacl/uplatform-waf/ca9f4d3d-cc20-470e-891b-da07f624544c"
-$VPC_ID       = "vpc-0b3eae8e399720af3"
+$ACM_CERT_ARN = "arn:aws:acm:ap-south-1:796197769514:certificate/d52286ef-3e36-405d-84ee-8962ef43fb00"
+$WAF_ACL_ARN  = "arn:aws:wafv2:ap-south-1:796197769514:regional/webacl/uplatform-waf/40de3f5b-5095-440f-b283-65737917a3fb"
+$VPC_ID       = "vpc-04cc0ab3c2c119fb3"
 
 # DockerHub credentials
 $DOCKERHUB_USERNAME = "jayyp2op"
-$DOCKERHUB_TOKEN    = "YOUR_DOCKERHUB_TOKEN"
+$DOCKERHUB_TOKEN    = "dckr_pat_VUUGhpGJRFlW52WU5BwXGOcG2n8"
 
 # Component versions
 $ARGOCD_VERSION         = "7.3.4"
