@@ -12,7 +12,7 @@ autoscaling:
 
 gateway:
   certificateArn: "arn:aws:acm:ap-south-1:796197769514:certificate/d52286ef-3e36-405d-84ee-8962ef43fb00"
-  wafAclArn: "arn:aws:wafv2:ap-south-1:796197769514:regional/webacl/uplatform-waf/40de3f5b-5095-440f-b283-65737917a3fb"
+  wafAclArn: "arn:aws:wafv2:ap-south-1:796197769514:regional/webacl/uplatform-waf/d9a4769d-7814-4e84-bef2-ffbf5f6a7591"
   host: qa.jp2op-project.site
 
   publicSubnets:
